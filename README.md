@@ -1,4 +1,4 @@
-# Dashboard de Formação FBP — Projeto de Capital Humano · v4
+# Dashboard de Formação FBP — Projeto de Capital Humano · v5
 
 **Aplicação Streamlit para acompanhamento dos 15 itens do pré e pós-teste FBP.**
 
@@ -6,13 +6,22 @@
 
 Três páginas principais, com menu lateral compacto:
 
-1. **Dashboard** — total de participantes com pré-teste completo, pós-testes associados, média inicial, evolução dos pares válidos, cinco perguntas mais difíceis e consulta individual.
-2. **Aprendizagem** — resultados por competência, por pergunta, análise pré/pós exclusivamente para os mesmos participantes, evolução por instituição e exportação.
+1. **Dashboard** — total de participantes com pré-teste completo, pós-testes associados, média inicial, evolução dos pares válidos, cinco perguntas mais difíceis e uma tabela destacada de resultados por participante (10 por página, com pesquisa).
+2. **Aprendizagem** — resultados por competência, por pergunta, análise pré/pós exclusivamente para os mesmos participantes, evolução por instituição e exportação, além de uma ficha individual com respostas às 15 perguntas.
 3. **Qualidade dos dados** — duplicados reais (mesmo ID), duplicados potenciais (mesmo nome e instituição com IDs diferentes), submissões incompletas, notas divergentes, respostas sem correspondência e gestão cuidadosa de duplicados.
 
 **Não existe meta fixa de 40 participantes.** O sistema conta apenas os participantes registados; o número de 40 referido inicialmente era indicativo e não é tratado como valor de referência. «Ainda sem pós-teste» = pessoas com pré-teste completo, mas sem pós-teste válido associado. **Não corresponde a ausências antes do pré-teste**, que não podemos identificar sem uma lista de presenças.
 
-**Tabelas:** HTML responsivo, linhas com quebra automática e paginação (6 a 8 registos por página). Sem barras de scroll internas, mesmo com mais de 40 participantes.
+**Tabelas:** HTML responsivo, com quebra automática de texto e paginação (10 participantes por página, 8 questões por página na ficha individual). Sem barras de scroll internas. O documento poderá ter scroll de página normal.
+
+## Novidades v5
+
+- **Dashboard → Resultados por participante:** nome completo, instituição, nota do pré e pós-teste em acertos `/15`, ganho em pontos percentuais e estado, com pesquisa por nome/instituição/função e exportação CSV. Não é um relatório apenas agregado.
+- **Aprendizagem → Ficha individual:** seleção pelo nome e instituição, resultados pré/pós, diferença e tabela de P01–P15 com opção assinalada (A/B/C/D), indicação de certo/errado, melhoria/regressão e enunciado completo numa caixa abaixo. Funciona também enquanto o pós-teste ainda não foi realizado.
+- **Dashboard → Conteúdos que precisam de reforço:** os códigos das barras continuam a ser **P01, P02, …, P15**. O enunciado integral e a percentagem aparecem ao passar o rato sobre a barra, com quebras de linha automáticas.
+- Os resultados individuais estão protegidos por `DASHBOARD_PASSWORD`, enquanto os agregados continuam disponíveis sem essa configuração. Se não colocares essa palavra-passe, a tabela nominal não é mostrada; isto é intencional para não expor as notas individuais publicamente.
+- Nenhum dos XLSForms, identificadores Kobo, método de escolha de submissão ou regras de eliminação foi alterado nesta versão.
+
 
 ## Instalação na aplicação Streamlit existente
 
@@ -72,6 +81,6 @@ python -m unittest discover -s tests -v
 streamlit run app.py
 ```
 
-Os testes cobrem cálculos, associação pré/pós, consulta de API, paginação, proteção do registo canónico, duplicados com a mesma identidade em edições diferentes, permissão de eliminação e backup JSON.
+Os testes cobrem cálculos, associação pré/pós, recuperação das 15 respostas individuais, correspondência com o cálculo agregado, hover dos gráficos mantendo os códigos P01–P15, consulta de API, proteção do registo canónico, duplicados, autorização de eliminação e backup JSON.
 
-**Estado:** código compilado e 20 testes automatizados passaram (pytest). Esta sessão não teve acesso HTTP ao servidor Kobo e não conseguiu executar um servidor Streamlit local (biblioteca não instalada/indisponível para instalação). **A interface e a API DELETE ainda precisam de validação na aplicação publicada e numa conta autorizada.**
+**Estado:** código compilado e **23 testes automatizados passaram** (`python -m unittest discover -s tests -v`). Esta sessão não teve acesso HTTP ao servidor Kobo e a biblioteca Streamlit não se encontra instalada neste ambiente. **A interface real e a função DELETE precisam ainda de validação na aplicação publicada e numa conta autorizada.**

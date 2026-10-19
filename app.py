@@ -19,6 +19,8 @@ import streamlit as st
 from analysis import build_analysis, question_summary, institution_summary, field, score_record
 from monitor import pre_per_question, topic_performance, suspected_duplicate_names
 from quality import audit_records, can_delete_now, backup_json
+from individual import participant_question_detail, compact_status, short_institution
+from charts import bar_figure
 from kobo_client import (DEFAULT_BASE_URL, PRE_UID, POS_UID,
                          KoboAPIError, fetch_submissions, delete_submission)
 
@@ -85,7 +87,7 @@ def setting(key, fallback=''):
 
 def secure_access():
     pw=setting('DASHBOARD_PASSWORD')
-    if not pw: return False
+    if not pw: return False  # sem palavra-passe, as identificações individuais permanecem ocultas
     if st.session_state.get('access') is True: return True
     st.title('Acesso ao acompanhamento FBP')
     st.caption('Introduza a palavra-passe para consultar os resultados da formação.')
@@ -145,16 +147,7 @@ def clean_table(df, columns, key, size=8, widths=None):
 
 
 def bar_chart(df,label_key,value_key,max_rows=5,palette=BLUE):
-    data=df.head(max_rows).iloc[::-1]
-    values=data[value_key].astype(float).fillna(0)
-    color=[RED if n<50 else ORANGE if n<70 else palette for n in values]
-    fig=go.Figure(go.Bar(x=values,y=data[label_key],orientation='h',marker_color=color,
-          text=[f'{v:.0f}%' for v in values],textposition='outside',cliponaxis=False,
-          hovertemplate='%{y}: %{x:.1f}%<extra></extra>'))
-    fig.update_layout(height=max(240,58*len(data)+35),margin=dict(t=10,b=18,l=5,r=35),
-                      xaxis=dict(range=[0,111],dtick=25,gridcolor='#E7EDF2',title=None,zeroline=False),
-                      yaxis=dict(title=None,automargin=True),font=dict(color=NAVY,size=12),
-                      showlegend=False,paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)')
+    fig=bar_figure(df,label_key,value_key,max_rows=max_rows,palette=palette)
     st.plotly_chart(fig,use_container_width=True,config={'displayModeBar':False})
 
 
@@ -201,6 +194,81 @@ def selection_panel(df):
         return edition,institution
 
 
+def participant_table(df, key='participant_rows', page_size=10):
+    """Tabela compacta com nomes e avaliação individual, sem scroll interno."""
+    if df.empty:
+        st.caption('Ainda não há participantes com pré-teste registado.')
+        return
+    q=st.text_input('Pesquisar participante', placeholder='Nome, instituição ou função…',
+                    key=f'{key}_query')
+    src=df.copy()
+    if q.strip():
+        mask=(src['Nome'].fillna('').str.contains(q.strip(),case=False,regex=False)
+              |src['Instituição'].fillna('').str.contains(q.strip(),case=False,regex=False)
+              |src['Função'].fillna('').str.contains(q.strip(),case=False,regex=False))
+        src=src[mask]
+    if src.empty:
+        st.caption('Nenhum participante corresponde à pesquisa.')
+        return
+    src=src.sort_values('Nome').copy()
+    table=pd.DataFrame({
+        'Nome':src['Nome'],
+        'Instituição':src['Instituição'].map(short_institution),
+        'Pré':src['Acertos pré'].map(lambda n:'—' if pd.isna(n) else f'{int(n)}/15'),
+        'Pós':src['Acertos pós'].map(lambda n:'—' if pd.isna(n) else f'{int(n)}/15'),
+        'Evolução':src['Evolução (pp)'].map(diff),
+        'Situação':src['Estado'].map(compact_status),
+    })
+    clean_table(table, [('Participante','Nome'),('Instituição','Instituição'),('Pré','Pré'),
+                        ('Pós','Pós'),('Evolução','Evolução'),('Estado','Situação')],
+                key=key,size=page_size,widths=[33,17,10,10,14,16])
+    st.download_button('Exportar resultados individuais (CSV)',data=csv(src),
+                       file_name='FBP_resultados_por_participante.csv',mime='text/csv',
+                       key=f'{key}_download')
+
+
+def individual_panel(df, pre_raw, pos_raw, access):
+    """Resumo, 15 correções de perguntas e respostas para uma pessoa selecionada."""
+    heading('Ficha individual','Avaliação detalhada de uma pessoa')
+    if not access:
+        st.info('Para consultar os nomes e os resultados individuais, configura DASHBOARD_PASSWORD nas Secrets do Streamlit.')
+        return
+    if df.empty:
+        st.caption('Ainda não há participantes.')
+        return
+    options=df.sort_values('Nome')['participante_id'].tolist()
+    mapping={str(r['participante_id']):r for _,r in df.iterrows()}
+    chosen=st.selectbox('Selecionar participante',options,
+                        format_func=lambda pid:f"{mapping[pid]['Nome']} · {short_institution(mapping[pid]['Instituição'])}",
+                        key='individual_choice')
+    data=mapping[chosen]
+    st.caption(f"{data['Nome']} · {data['Instituição']} · {data['Função']} · edição {data['Edição']}")
+    first,second,third=st.columns(3)
+    with first:
+        st.metric('Pré-teste', '—' if pd.isna(data['Acertos pré']) else f"{int(data['Acertos pré'])}/15")
+        st.caption(f"Taxa de acerto: {pct(data['Pré (%)'])}")
+    with second:
+        st.metric('Pós-teste', '—' if pd.isna(data['Acertos pós']) else f"{int(data['Acertos pós'])}/15")
+        st.caption(f"Taxa de acerto: {pct(data['Pós (%)'])}")
+    third.metric('Evolução',diff(data['Evolução (pp)']))
+    details=participant_question_detail(pre_raw,pos_raw,chosen,QUESTIONS)
+    if details:
+        detail_df=pd.DataFrame(details)
+        clean_table(detail_df,[('Pergunta','Pergunta'),('Resposta pré','Resposta pré'),('Pré','Pré'),
+                               ('Resposta pós','Resposta pós'),('Pós','Pós'),('Evolução','Evolução')],
+                    key=f'detail_{chosen}',size=8,widths=[12,17,14,17,14,26])
+        code=st.selectbox('Consultar o enunciado de uma pergunta',
+                          detail_df['Pergunta'].tolist(),key=f'item_{chosen}')
+        item=next(x for x in details if x['Pergunta']==code)
+        st.markdown(f'<div class="notice"><b>{h(code)}</b> — {h(item["Enunciado"])}'
+                    f'<br><span class="muted">Resposta correta: {h(item["Correta"])} · '
+                    f'Pré: {h(item["Resposta pré"])} · Pós: {h(item["Resposta pós"])}</span></div>',
+                    unsafe_allow_html=True)
+        st.download_button('Exportar respostas deste participante',data=csv(detail_df),
+                           file_name=f'FBP_respostas_participante_{chosen[:12]}.csv',
+                           mime='text/csv',key=f'export_{chosen}')
+
+
 def view_dashboard(df, pre_raw, raw_pre_count, raw_pos_count, qpre, access):
     st.title('Dashboard')
     st.markdown('<div class="hero-sub">Visão operacional da formação · dados atualizados a partir do Kobo</div>',unsafe_allow_html=True)
@@ -244,21 +312,14 @@ def view_dashboard(df, pre_raw, raw_pre_count, raw_pos_count, qpre, access):
             pre_p=paired['Pré (%)'].mean();pos_p=paired['Pós (%)'].mean()
             st.write(f'Pré-teste: **{pct(pre_p)}** → Pós-teste: **{pct(pos_p)}**')
         st.caption('O sistema não assume uma meta fixa de participantes.')
-    heading('Acompanhamento dos participantes','Até 8 linhas por página')
-    if access and not df.empty:
-        query=st.text_input('Pesquisar por nome',placeholder='Pesquisar participante…',label_visibility='collapsed',key='dash_q')
-        part=df[df['Nome'].str.contains(query,case=False,regex=False,na=False)] if query else df
-        display=part[['Nome','Instituição','Pré (%)','Pós (%)','Evolução (pp)','Estado']].copy()
-        for column in ['Pré (%)','Pós (%)']:display[column]=display[column].map(pct)
-        display['Evolução (pp)']=display['Evolução (pp)'].map(diff)
-        clean_table(display.sort_values('Nome'),[('Participante','Nome'),('Instituição','Instituição'),('Pré','Pré (%)'),('Pós','Pós (%)'),('Evolução','Evolução (pp)'),('Estado','Estado')],key='main_part',widths=[23,22,10,10,12,23])
-        st.download_button('Exportar participantes (CSV)',data=csv(part.drop(columns=['participante_id'],errors='ignore')),
-                           file_name='FBP_participantes.csv',mime='text/csv')
-    elif not access: st.info('Para consultar nomes e exportar resultados, configura DASHBOARD_PASSWORD nas Secrets.')
-    else:st.caption('Ainda não existem participantes.')
+    heading('Resultados por participante','Notas individuais e estado do pós-teste')
+    if access:
+        participant_table(df,key='dashboard_participants',page_size=10)
+    else:
+        st.info('A tabela nominal fica protegida. Para a consultar, define DASHBOARD_PASSWORD nas Secrets e entra com a palavra-passe.')
 
 
-def view_aprendizagem(df,qpre,paired_questions,access):
+def view_aprendizagem(df,qpre,paired_questions,access,pre_raw,pos_raw):
     st.title('Aprendizagem')
     st.markdown('<div class="hero-sub">Diagnóstico inicial, evolução das competências e resultados por instituição</div>',unsafe_allow_html=True)
     valid=df[df['Pré (%)'].notna()] if not df.empty else df
@@ -311,6 +372,9 @@ def view_aprendizagem(df,qpre,paired_questions,access):
         for col in ['Pré pares (%)','Pós pares (%)']:short[col]=short[col].map(pct)
         short['Evolução (pp)']=short['Evolução (pp)'].map(diff)
         clean_table(short,[('Instituição','Instituição'),('Pré','Pré-testes'),('Pós','Pós-testes'),('Pré pares','Pré pares (%)'),('Pós pares','Pós pares (%)'),('Ganho','Evolução (pp)')],key='inst',size=7,widths=[32,11,11,16,16,14])
+
+    st.divider()
+    individual_panel(df,pre_raw,pos_raw,access)
 
 
 def view_qualidade(df,report,pre_raw,pos_raw,access,base,pre_uid,pos_uid,token):
@@ -443,7 +507,7 @@ def main():
     if page=='Dashboard':
         view_dashboard(data,pre_raw,report['raw_pre_count'],report['raw_pos_count'],qpre,access)
     elif page=='Aprendizagem':
-        view_aprendizagem(data,qpre,paired_questions,access)
+        view_aprendizagem(data,qpre,paired_questions,access,pre_raw,pos_raw)
     else:
         view_qualidade(data,report,pre_raw,pos_raw,access,base,pre_uid,pos_uid,token)
     st.markdown('<div class="foot">Projeto de Capital Humano · FBP | Resultados recalculados a partir das respostas Kobo · '+

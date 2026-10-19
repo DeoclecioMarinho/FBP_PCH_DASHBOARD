@@ -1,0 +1,14 @@
+ATUALIZAÇÃO v5 — FBP PCH
+
+1. Descompactar o ZIP. Substituir os ficheiros do GitHub pelos da pasta FBP_PCH_DASHBOARD_V5.
+2. MUITO IMPORTANTE: carregar também dois ficheiros novos, individual.py e charts.py.
+3. Manter as atuais Secrets Kobo. Para ter nomes e notas individuais no painel:
+   DASHBOARD_PASSWORD = "PALAVRA_PASSE_FORTE"
+   Sem a password a aplicação apresenta indicadores agregados, não a tabela nominal.
+4. Fazer Commit e aguardar o redeploy do Streamlit.
+5. Abrir Dashboard -> Resultados por participante.
+6. Abrir Aprendizagem -> Ficha individual.
+7. Passar o rato pelas barras em Conteúdos que precisam de reforço: o eixo apresenta P01, P02, ... e o hover o enunciado completo.
+
+NÃO ALTERADO: IDs Kobo, nomes das variáveis, formulários, ligação dinâmica, regras de eliminação.
+TESTADO: 23 testes automatizados locais passaram; confirmar visualização na aplicação publicada.
