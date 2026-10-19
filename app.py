@@ -31,21 +31,48 @@ RED = "#C9565A"
 st.set_page_config(page_title="PCH | Formação FBP — Avaliação", page_icon="📘", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""
 <style>
-.stApp {background: #f9fbfd;}
-.block-container {padding-top:1.1rem; padding-bottom:3rem; max-width:1450px;}
-h1 {font-size:1.65rem!important; color:#153e60!important; font-weight:760!important;}
-h2 {font-size:1.21rem!important; color:#153e60!important; margin-top:0.8rem!important;}
-h3 {font-size:1.04rem!important; color:#153e60!important;}
-[data-testid="stMetric"] {background:white; border:1px solid #e1e9f0; border-radius:13px; padding:13px 15px; box-shadow:0 2px 9px #223c5c07;}
-[data-testid="stMetricLabel"] {color:#64798b;}
-[data-testid="stMetricValue"] {font-size:1.75rem; font-weight:760; color:#193e5c;}
-[data-testid="stSidebar"] {background:#eff5f9; border-right:1px solid #d9e6ef;}
-hr {border-color:#dce6ee;}
-.fbp-hero {background:linear-gradient(108deg,#123f67,#176fa3);padding:22px 25px;color:white;border-radius:15px;margin:0 0 17px;}
-.fbp-hero h1 {color:white!important;margin:0 0 5px!important;}
-.fbp-hero p {font-size:0.89rem;color:#e3f2f8;margin:0;}
-.fbp-section {color:#28658d;font-weight:750;letter-spacing:.03em;margin:4px 0 10px;}
-.fbp-muted {font-size:0.84rem;color:#64788a;}
+:root { --fbp-blue: #155D91; --fbp-dark: #173D5C; --fbp-light: #EFF6FB; }
+.stApp { background: #f8fafc; }
+.block-container { padding-top: 1.1rem; padding-bottom: 2.6rem; max-width: 1450px; }
+h1 { font-size: 1.50rem !important; color: #173D5C !important; font-weight: 730 !important; }
+h2 { font-size: 1.16rem !important; color: #173D5C !important; margin-top: .75rem !important; }
+h3 { font-size: 1.02rem !important; color: #173D5C !important; }
+[data-testid="stMetric"] { background: white; border: 1px solid #E0EAF2; border-radius: 12px; padding: 13px 14px; box-shadow: 0 1px 6px #1f496010; }
+[data-testid="stMetricLabel"] { color: #61788C; }
+[data-testid="stMetricValue"] { font-size: 1.66rem; font-weight: 740; color: #193E5C; }
+[data-testid="stSidebar"] { background: #F2F6FA; border-right: 1px solid #DFE8F0; }
+[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] { padding-top: 1.25rem; }
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .52rem; }
+[data-testid="stSidebar"] .stButton button { transition: background .12s ease, border-color .12s ease; }
+/* Navegação por botões, sem círculos de radio, com página ativa em destaque. */
+[data-testid="stSidebar"] [class*="st-key-nav_"] button {
+    width: 100%; min-height: 2.48rem; text-align: left;
+    justify-content: flex-start; border-radius: 10px;
+    font-size: .88rem; font-weight: 580;
+    padding: .48rem .82rem; box-shadow: none;
+}
+[data-testid="stSidebar"] [class*="st-key-nav_"] button[kind="secondary"] {
+    background: transparent; border: 1px solid transparent; color: #334F65;
+}
+[data-testid="stSidebar"] [class*="st-key-nav_"] button[kind="secondary"]:hover {
+    background: #E7F1F8; color: #125A8A; border-color: #DAE8F2;
+}
+[data-testid="stSidebar"] [class*="st-key-nav_"] button[kind="primary"] {
+    background: #155D91; border: 1px solid #155D91; border-left: 4px solid #67C0D3;
+    color: white; font-weight: 700;
+}
+[data-testid="stSidebar"] [class*="st-key-nav_"] button p { font-size: .88rem; }
+.fbp-brand-title { color: #173D5C; font-weight: 760; letter-spacing: .01em; font-size: .93rem; line-height: 1.25; }
+.fbp-brand-subtitle { color: #728496; font-size: .70rem; line-height: 1.35; margin-top: .2rem; }
+.fbp-nav-title { font-size: .70rem; font-weight: 750; letter-spacing: .13em; color: #8293A2; margin-top: .6rem; margin-bottom: -.15rem; }
+.fbp-small-separator { border-bottom: 1px solid #DFE8F0; margin: .5rem 0 .35rem; }
+hr { border-color: #DFE8F0; }
+.fbp-hero { background: linear-gradient(112deg,#173E60,#166C9F); padding: 18px 24px; color: white; border-radius: 13px; margin: 0 0 16px; }
+.fbp-hero h1 { color: white !important; font-size: 1.45rem !important; margin: 0 0 5px !important; }
+.fbp-hero p { font-size: .86rem; color: #E2F0F7; margin: 0; }
+.fbp-section { color: #28658D; font-weight: 750; letter-spacing: .03em; margin: 4px 0 10px; }
+.fbp-muted { font-size: .84rem; color: #64788A; }
+@media (max-width: 1000px) { .fbp-hero { padding: 14px 17px; } .fbp-hero h1 { font-size: 1.25rem !important; } }
 </style>
 """, unsafe_allow_html=True)
 
@@ -309,33 +336,68 @@ def quality_page(analysis, frame):
 """)
 
 
+def change_page(name):
+    st.session_state["fbp_page"] = name
+
+
 def main():
     basic_auth()
     base=setting("KOBO_BASE_URL",DEFAULT_BASE_URL)
     pre_uid=setting("KOBO_PRE_UID",PRE_UID)
     pos_uid=setting("KOBO_POS_UID",POS_UID)
     token=setting("KOBO_TOKEN")
+    if "fbp_page" not in st.session_state:
+        st.session_state["fbp_page"] = "Visão geral"
 
     with st.sidebar:
         logo=ROOT/"assets"/"logo_pch.png"
-        if logo.exists():st.image(str(logo),width=122)
-        st.markdown("### PCH · Formação FBP")
-        st.caption("Seguimento e avaliação da aprendizagem")
-        page=st.radio("Menu",["Visão geral","Participantes","Aprendizagem","Qualidade dos dados"],label_visibility="collapsed")
-        st.divider()
-        demo=st.toggle("Modo demonstração (dados fictícios)",value=False)
-        if st.button("🔄 Atualizar dados do Kobo",use_container_width=True,disabled=demo):
+        brand_logo, brand_text = st.columns([.85, 2.35], gap="small", vertical_alignment="center")
+        with brand_logo:
+            if logo.exists():
+                st.image(str(logo), width=68)
+        with brand_text:
+            st.markdown('<div class="fbp-brand-title">PCH · Formação FBP</div>'
+                        '<div class="fbp-brand-subtitle">Monitorização da aprendizagem</div>', unsafe_allow_html=True)
+        st.markdown('<div class="fbp-small-separator"></div><div class="fbp-nav-title">NAVEGAÇÃO</div>', unsafe_allow_html=True)
+        nav_items = [
+            ("Visão geral", "📊  Visão geral", "nav_visao"),
+            ("Participantes", "👥  Participantes", "nav_participantes"),
+            ("Aprendizagem", "📈  Aprendizagem", "nav_aprendizagem"),
+            ("Qualidade dos dados", "🛡️  Qualidade dos dados", "nav_qualidade"),
+        ]
+        for page_name, label, key in nav_items:
+            st.button(label, key=key,
+                      type="primary" if st.session_state["fbp_page"] == page_name else "secondary",
+                      on_click=change_page, args=(page_name,), use_container_width=True)
+        page=st.session_state["fbp_page"]
+        st.markdown('<div class="fbp-small-separator"></div><div class="fbp-nav-title">DADOS</div>', unsafe_allow_html=True)
+        if st.button("↻  Atualizar Kobo", key="refresh_kobo", use_container_width=True):
             load_kobo.clear()
             st.rerun()
-        st.caption("Atualização automática em cache: até 3 minutos. O botão força a consulta dos dois formulários.")
+        st.caption("Atualização automática a cada 3 minutos.")
+        with st.expander("⚙️ Ferramentas", expanded=False):
+            demo=st.toggle("Modo demonstração", value=False, help="Mostra dados fictícios para experimentar o painel.")
+            if demo:
+                st.caption("Os valores apresentados não são dados reais.")
+        if not token and not demo:
+            st.caption("⚠️ Falta configurar KOBO_TOKEN em Secrets.")
+
+    st.markdown('<div class="fbp-hero"><h1>Financiamento Baseado em Performance</h1>'
+                '<p>Projeto de Capital Humano · Avaliação da Formação · Pré-teste e Pós-teste</p></div>',
+                unsafe_allow_html=True)
 
     if demo:
         raw_pre,raw_pos=demo_data()
         st.warning("MODO DEMONSTRAÇÃO — Todos os dados apresentados são fictícios e não provêm do teu servidor Kobo.")
     else:
         if not token:
-            st.error("Configuração em falta: KOBO_TOKEN. Define o token nos Secrets do Streamlit (não no código).")
-            st.info("Para explorar a interface entretanto, ativa o 'Modo demonstração' na barra lateral.")
+            st.warning("É necessário configurar a credencial Kobo para apresentar os resultados reais.")
+            st.markdown("**Ativar a ligação**: no Streamlit Cloud, abre **Manage app → Settings → Secrets**, insere a configuração abaixo e guarda.")
+            st.code('KOBO_BASE_URL = "https://kf.kobo.ucp-pch.org"\n'
+                    'KOBO_PRE_UID = "a9UStPiv4QDyzfZeHiBzwu"\n'
+                    'KOBO_POS_UID = "a2JXAwUZP7h3z3nUmpfchj"\n'
+                    'KOBO_TOKEN = "INSERIR_TOKEN_PRIVADO"', language="toml")
+            st.info("O token não deve ser introduzido no app.py nem publicado no GitHub. Podes usar Ferramentas → Modo demonstração para visualizar o painel sem credenciais.")
             st.stop()
         digest=hashlib.sha256(token.encode("utf8")).hexdigest()
         try:
@@ -347,7 +409,6 @@ def main():
             st.stop()
     analysis=build_analysis(raw_pre,raw_pos)
     full=analysis["participants"]
-    st.markdown('<div class="fbp-hero"><h1>Financiamento Baseado em Performance</h1><p>Projeto de Capital Humano · Avaliação da Formação · Pré-teste e Pós-teste</p></div>',unsafe_allow_html=True)
 
     if not full.empty:
         with st.sidebar:
