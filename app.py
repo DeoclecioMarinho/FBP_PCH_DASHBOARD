@@ -1,4 +1,4 @@
-"""Dashboard FBP/PCH - pré e pós-teste KoboToolbox (sem CSV e sem escrever no Kobo)."""
+"""PCH | FBP — Dashboard operacional da formação (~40 participantes)."""
 import hashlib
 import hmac
 import json
@@ -7,433 +7,376 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from analysis import (
-    ANSWER_KEY, N_QUESTIONS, TOPICS, build_analysis,
-    institution_summary, question_summary,
-)
-from demo import demo_data
-from kobo_client import (
-    DEFAULT_BASE_URL, PRE_UID, POS_UID, KoboAPIError, fetch_submissions,
-)
+from analysis import build_analysis, question_summary
+from kobo_client import DEFAULT_BASE_URL, PRE_UID, POS_UID, KoboAPIError, fetch_submissions
+from monitor import pre_per_question, topic_performance, suspected_duplicate_names
 
 ROOT = Path(__file__).resolve().parent
 QUESTIONS = json.loads((ROOT / "questionario.json").read_text(encoding="utf-8"))["questions"]
-ACCENT = "#12659C"
-DARK = "#163E60"
-TEAL = "#0B8B83"
-AMBER = "#CC7A18"
-RED = "#C9565A"
+NAVY = "#253C4E"
+BLUE = "#235D7A"
+GREEN = "#18786C"
+AMBER = "#A86F29"
+RED = "#B85650"
+MUTED = "#748596"
 
-st.set_page_config(page_title="PCH | Formação FBP — Avaliação", page_icon="📘", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="PCH · Formação FBP", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""
 <style>
-:root { --fbp-blue: #155D91; --fbp-dark: #173D5C; --fbp-light: #EFF6FB; }
-.stApp { background: #f8fafc; }
-.block-container { padding-top: 1.1rem; padding-bottom: 2.6rem; max-width: 1450px; }
-h1 { font-size: 1.50rem !important; color: #173D5C !important; font-weight: 730 !important; }
-h2 { font-size: 1.16rem !important; color: #173D5C !important; margin-top: .75rem !important; }
-h3 { font-size: 1.02rem !important; color: #173D5C !important; }
-[data-testid="stMetric"] { background: white; border: 1px solid #E0EAF2; border-radius: 12px; padding: 13px 14px; box-shadow: 0 1px 6px #1f496010; }
-[data-testid="stMetricLabel"] { color: #61788C; }
-[data-testid="stMetricValue"] { font-size: 1.66rem; font-weight: 740; color: #193E5C; }
-[data-testid="stSidebar"] { background: #F2F6FA; border-right: 1px solid #DFE8F0; }
-[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] { padding-top: 1.25rem; }
-[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .52rem; }
-[data-testid="stSidebar"] .stButton button { transition: background .12s ease, border-color .12s ease; }
-/* Navegação por botões, sem círculos de radio, com página ativa em destaque. */
-[data-testid="stSidebar"] [class*="st-key-nav_"] button {
-    width: 100%; min-height: 2.48rem; text-align: left;
-    justify-content: flex-start; border-radius: 10px;
-    font-size: .88rem; font-weight: 580;
-    padding: .48rem .82rem; box-shadow: none;
-}
-[data-testid="stSidebar"] [class*="st-key-nav_"] button[kind="secondary"] {
-    background: transparent; border: 1px solid transparent; color: #334F65;
-}
-[data-testid="stSidebar"] [class*="st-key-nav_"] button[kind="secondary"]:hover {
-    background: #E7F1F8; color: #125A8A; border-color: #DAE8F2;
-}
-[data-testid="stSidebar"] [class*="st-key-nav_"] button[kind="primary"] {
-    background: #155D91; border: 1px solid #155D91; border-left: 4px solid #67C0D3;
-    color: white; font-weight: 700;
-}
-[data-testid="stSidebar"] [class*="st-key-nav_"] button p { font-size: .88rem; }
-.fbp-brand-title { color: #173D5C; font-weight: 760; letter-spacing: .01em; font-size: .93rem; line-height: 1.25; }
-.fbp-brand-subtitle { color: #728496; font-size: .70rem; line-height: 1.35; margin-top: .2rem; }
-.fbp-nav-title { font-size: .70rem; font-weight: 750; letter-spacing: .13em; color: #8293A2; margin-top: .6rem; margin-bottom: -.15rem; }
-.fbp-small-separator { border-bottom: 1px solid #DFE8F0; margin: .5rem 0 .35rem; }
-hr { border-color: #DFE8F0; }
-.fbp-hero { background: linear-gradient(112deg,#173E60,#166C9F); padding: 18px 24px; color: white; border-radius: 13px; margin: 0 0 16px; }
-.fbp-hero h1 { color: white !important; font-size: 1.45rem !important; margin: 0 0 5px !important; }
-.fbp-hero p { font-size: .86rem; color: #E2F0F7; margin: 0; }
-.fbp-section { color: #28658D; font-weight: 750; letter-spacing: .03em; margin: 4px 0 10px; }
-.fbp-muted { font-size: .84rem; color: #64788A; }
-@media (max-width: 1000px) { .fbp-hero { padding: 14px 17px; } .fbp-hero h1 { font-size: 1.25rem !important; } }
+.stApp { background-color:#F8FAFC; color:#243747; }
+.block-container {max-width:1260px; padding-top:1.7rem; padding-bottom:2rem;}
+h1 {font-size:1.6rem !important; font-weight:700 !important; color:#22394A !important; margin-bottom:.1rem !important;}
+h2 {font-size:1.14rem !important; font-weight:680 !important; color:#243D50 !important; padding-top:.45rem !important;}
+h3 {font-size:1rem !important; font-weight:650 !important; color:#243D50 !important;}
+[data-testid="stSidebar"] {background:#F0F4F7; border-right:1px solid #E1E8EE;}
+[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {padding-top:1.25rem;}
+[data-testid="stMetric"] {background:#fff; padding:14px 16px; border:1px solid #E3EAF0; border-radius:9px;}
+[data-testid="stMetricLabel"] {font-size:.81rem; color:#607586;}
+[data-testid="stMetricValue"] {font-size:1.58rem; font-weight:720; color:#203C51;}
+[data-testid="stMetricDelta"] {font-size:.75rem;}
+button[data-baseweb="tab"] {font-size:.9rem; font-weight:620;}
+[data-baseweb="tab-list"] {gap:1rem; border-bottom:1px solid #DCE6ED;}
+[data-testid="stExpander"] {background:#fff; border:1px solid #E5EBF0; border-radius:8px;}
+.fbp-brand {font-size:.98rem; font-weight:730; color:#263E50; margin:0;}
+.fbp-sub {font-size:.74rem; color:#758898; margin-top:2px;}
+.fbp-eyebrow {color:#718697; font-size:.75rem; letter-spacing:.035em; font-weight:650;}
+.fbp-hint {color:#62788A; font-size:.83rem; line-height:1.5; margin:.2rem 0 1rem;}
+.fbp-foot {color:#8694A0; font-size:.73rem; margin-top:1rem;}
+hr {border-color:#DFE7ED;}
 </style>
 """, unsafe_allow_html=True)
 
 
-def setting(name, default=""):
+def setting(key, fallback=""):
     try:
-        val = st.secrets.get(name, None)
-        if val is not None:
-            return str(val)
-    except (FileNotFoundError, RuntimeError, KeyError, AttributeError):
+        value = st.secrets.get(key)
+        if value is not None:
+            return str(value)
+    except (FileNotFoundError, AttributeError, KeyError, RuntimeError):
         pass
-    return os.environ.get(name, default)
+    return os.environ.get(key, fallback)
 
 
-def basic_auth():
+def secure_auth():
     password = setting("DASHBOARD_PASSWORD")
     if not password:
-        return
-    if st.session_state.get("login_ok", False):
-        return
-    st.title("🔒 Acesso ao painel FBP")
+        return False  # Exibe apenas agregados, sem dados pessoais.
+    if st.session_state.get("authenticated"):
+        return True
+    st.title("Acesso ao acompanhamento FBP")
+    st.caption("Insere a palavra-passe para consultar os resultados da formação.")
     with st.form("login"):
-        attempted = st.text_input("Palavra-passe de acesso", type="password")
+        attempt = st.text_input("Palavra-passe", type="password")
         submitted = st.form_submit_button("Entrar", type="primary")
     if submitted:
-        if hmac.compare_digest(attempted, password):
-            st.session_state["login_ok"] = True
+        if hmac.compare_digest(attempt, password):
+            st.session_state["authenticated"] = True
             st.rerun()
         else:
             st.error("Palavra-passe incorreta.")
     st.stop()
 
 
-def fmt_pct(value):
-    return "—" if pd.isna(value) else f"{value:.1f}%".replace(".", ",")
+def fmt_pct(x):
+    return "—" if x is None or pd.isna(x) else f"{float(x):.1f}%".replace(".", ",")
 
 
-def fmt_pp(value):
-    return "—" if pd.isna(value) else f"{value:+.1f} pp".replace(".", ",")
+def fmt_pp(x):
+    return "—" if x is None or pd.isna(x) else f"{float(x):+.1f} pp".replace(".", ",")
 
 
-def csv_bytes(frame):
-    return frame.to_csv(index=False, sep=";").encode("utf-8-sig")
+def csv_content(df):
+    return df.to_csv(index=False, sep=";").encode("utf-8-sig")
 
 
-@st.cache_data(ttl=180, show_spinner=False)
-def load_kobo(base_url: str, pre_uid: str, pos_uid: str, token_hash: str, _token: str):
-    pre = fetch_submissions(base_url, pre_uid, _token)
-    pos = fetch_submissions(base_url, pos_uid, _token)
-    return pre, pos
+@st.cache_data(ttl=120, show_spinner=False)
+def fetch_both(base, pre_uid, pos_uid, token_hash, _token):
+    return (fetch_submissions(base, pre_uid, _token),
+            fetch_submissions(base, pos_uid, _token),
+            datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC"))
 
 
-def filter_dashboard(df, edition, institution, selected_status, text):
-    if df.empty:
-        return df.copy()
-    result = df
-    if edition != "Todas":
-        result = result[result["Edição"] == edition]
-    if institution != "Todas":
-        result = result[result["Instituição"] == institution]
-    if selected_status:
-        result = result[result["Estado"].isin(selected_status)]
-    if text.strip():
-        result = result[result["Nome"].str.contains(text.strip(), case=False, regex=False, na=False)]
-    return result.copy()
-
-
-def caption_pair():
-    st.caption("As médias de pré e pós usam **exatamente os mesmos participantes**, com ambos os testes completos e identidade confirmada. Assim, a evolução não é distorcida por quem ainda não fez o pós-teste.")
-
-
-def metric_band(frame):
-    n_pre = len(frame)
-    pairs = frame[frame["Estado"] == "Pré e pós concluídos"] if n_pre else frame
-    n_pos = len(pairs)
-    coverage = round(100 * n_pos / n_pre, 1) if n_pre else 0
-    pre_avg = pairs["Pré (%)"].mean() if n_pos else float("nan")
-    pos_avg = pairs["Pós (%)"].mean() if n_pos else float("nan")
-    evolution = pos_avg-pre_avg if n_pos else float("nan")
-    cols = st.columns(6)
-    values = [
-        ("Participantes no pré", str(n_pre)),
-        ("Pós-testes associados", str(n_pos)),
-        ("Cobertura pós", fmt_pct(coverage)),
-        ("Média pré (pares)", fmt_pct(pre_avg)),
-        ("Média pós (pares)", fmt_pct(pos_avg)),
-        ("Evolução média", fmt_pp(evolution)),
-    ]
-    for col,(name,value) in zip(cols,values):
-        col.metric(name,value)
-    return pairs
-
-
-def section_title(text):
-    st.markdown(f'<div class="fbp-section">{text}</div>', unsafe_allow_html=True)
-
-
-def chart_layout(fig, height=350):
-    fig.update_layout(
-        height=height, margin=dict(l=5,r=5,t=10,b=10),
-        plot_bgcolor="rgba(0,0,0,0)",paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Arial", size=12, color="#345165"),
-        legend=dict(orientation="h",y=1.09,x=0,title_text=""),
-    )
-    fig.update_yaxes(gridcolor="#e3edf3",zeroline=False)
+def question_chart(data):
+    """Gráfico sóbrio de perguntas com baixos acertos — não mostra a chave de correção."""
+    ordered = data.sort_values(["Acerto (%)", "Número"], ascending=[True, True]).copy()
+    colors = [RED if v < 50 else AMBER if v < 70 else GREEN for v in ordered["Acerto (%)"]]
+    fig = go.Figure(go.Bar(
+        y=ordered["Pergunta"], x=ordered["Acerto (%)"], orientation="h",
+        marker_color=colors, text=ordered["Acerto (%)"].map(lambda v: f"{v:.0f}%"),
+        textposition="outside", cliponaxis=False,
+        hovertemplate="%{y}: %{x:.1f}% de respostas corretas<extra></extra>",
+    ))
+    fig.update_layout(height=max(270, 40*len(data)+40),
+        xaxis=dict(title="% de respostas corretas", range=[0, 111],
+                   tickvals=[0,25,50,75,100], gridcolor="#E7EEF3", zeroline=False),
+        yaxis=dict(title="", autorange="reversed"),
+        margin=dict(l=12, r=35, t=10, b=25),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=NAVY, size=12), showlegend=False)
     return fig
 
 
-def overview(frame, analyses):
-    st.subheader("Visão geral da formação")
-    pairs = metric_band(frame)
-    caption_pair()
-    st.divider()
-    left, right = st.columns([1.3, 1], gap="large")
-    with left:
-        section_title("RESULTADOS POR INSTITUIÇÃO")
-        summary = institution_summary(frame)
-        usable = summary.dropna(subset=["Pré pares (%)","Pós pares (%)"])
-        if usable.empty:
-            st.info("Ainda não existem pares completos para comparar médias por instituição.")
-        else:
-            melted = usable.melt(id_vars="Instituição", value_vars=["Pré pares (%)", "Pós pares (%)"], var_name="Teste",value_name="Média (%)")
-            fig = px.bar(melted, x="Instituição", y="Média (%)", color="Teste",barmode="group",
-                         color_discrete_map={"Pré pares (%)":ACCENT,"Pós pares (%)":TEAL},text_auto=".1f")
-            fig.update_xaxes(tickangle=-15,title_text="")
-            fig.update_yaxes(range=[0,105])
-            st.plotly_chart(chart_layout(fig), use_container_width=True)
-        st.dataframe(summary, use_container_width=True, hide_index=True)
-    with right:
-        section_title("SITUAÇÃO DOS PARTICIPANTES")
-        counts = frame["Estado"].value_counts().reset_index() if not frame.empty else pd.DataFrame(columns=["Estado","count"])
-        if not counts.empty:
-            counts.columns = ["Estado", "N"]
-            fig = px.pie(counts,names="Estado",values="N",hole=.64,
-                         color_discrete_sequence=[TEAL,AMBER,ACCENT,RED,"#9aadc0"])
-            fig.update_traces(textposition="outside",textinfo="percent+label")
-            st.plotly_chart(chart_layout(fig,height=340),use_container_width=True)
-        else:
-            st.info("Sem registos para os filtros selecionados.")
-        pending = frame[frame["Estado"] != "Pré e pós concluídos"] if not frame.empty else frame
-        st.caption(f"{len(pending)} participante(s) sem um par válido para a comparação.")
-    st.divider()
-    section_title("EVOLUÇÃO DOS PARTICIPANTES COM AMBOS OS TESTES")
-    if len(pairs):
-        dots = pairs[["Nome","Pré (%)","Pós (%)"]].copy()
-        fig = go.Figure()
-        show_labels = len(dots) <= 10
-        fig.add_trace(go.Scatter(x=dots["Pré (%)"],y=dots["Pós (%)"],
-                   mode="markers+text" if show_labels else "markers",
-                   text=dots["Nome"] if show_labels else None, textposition="top center",
-                   customdata=dots["Nome"], name="Participantes",
-                   marker=dict(color=ACCENT,size=12,opacity=.84),
-                   hovertemplate="%{customdata}<br>Pré: %{x:.1f}%<br>Pós: %{y:.1f}%<extra></extra>"))
-        fig.add_trace(go.Scatter(x=[0,100],y=[0,100],mode="lines",name="Sem evolução",
-                   line=dict(color="#9aadb9",width=1,dash="dot"),showlegend=False))
-        fig.update_layout(xaxis=dict(title="Pré-teste (%)",range=[-4,104]),yaxis=dict(title="Pós-teste (%)",range=[-4,104]))
-        st.plotly_chart(chart_layout(fig,390),use_container_width=True)
-        st.caption("Pontos acima da linha diagonal indicam melhoria; abaixo, diminuição. A escala é de 0 a 100%.")
+def avg_comparison(pre_value, pos_value):
+    fig = go.Figure(go.Bar(
+        x=["Pré-teste", "Pós-teste"], y=[pre_value, pos_value],
+        marker_color=[BLUE, GREEN], text=[f"{pre_value:.1f}%", f"{pos_value:.1f}%"],
+        textposition="outside", cliponaxis=False,
+    ))
+    fig.update_layout(height=270, showlegend=False, margin=dict(l=10,r=10,t=20,b=10),
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      font=dict(color=NAVY, size=12),
+                      yaxis=dict(range=[0,110], gridcolor="#E6EDF2", title="% de acertos"),
+                      xaxis=dict(title=""))
+    return fig
+
+
+def pre_view(frame, raw_pre, goal, access, anomalies):
+    complete = frame[frame["Pré (%)"].notna()].copy() if not frame.empty else frame.copy()
+    n_pre = len(complete)
+    mean = complete["Pré (%)"].mean() if n_pre else None
+    ids = set(frame["participante_id"]) if not frame.empty else set()
+    qdf = pre_per_question(raw_pre, ids, QUESTIONS)
+    suspects = suspected_duplicate_names(raw_pre, ids)
+    bad_pre = (frame["Inconsistência nota pré"].sum() if not frame.empty else 0)
+    gaps = max(0, goal - n_pre) if goal is not None else None
+    qlow = qdf[qdf["Acerto (%)"] < 50].copy() if n_pre else qdf.head(0)
+
+    st.markdown("#### Como está a decorrer o pré-teste?")
+    a,b,c,d = st.columns(4)
+    a.metric("Pré-testes completos", f"{n_pre} / {goal}" if goal is not None else n_pre)
+    b.metric("Por completar (estimativa)", gaps if gaps is not None else "—")
+    c.metric("Média do pré-teste", fmt_pct(mean))
+    d.metric("Perguntas abaixo de 50%", str(len(qlow)) if n_pre >= 5 else "—")
+    if goal is not None:
+        st.progress(min(n_pre / goal, 1.0))
+        st.caption(f"{n_pre} formulários completos de uma meta de {goal} participantes. A meta é indicativa, não uma lista nominal de presenças.")
     else:
-        st.info("Quando os participantes concluírem ambos os testes, a comparação individual aparece aqui.")
+        st.caption("A meta de 40 participantes aplica-se à formação completa. O filtro institucional mostra apenas os registos selecionados.")
 
-
-def participants_page(frame):
-    st.subheader("Seguimento individual")
-    if frame.empty:
-        st.info("Sem registos para os filtros escolhidos.")
-        return
-    visible=["Nome","Instituição","Função","Edição","Estado","Acertos pré","Acertos pós","Pré (%)","Pós (%)","Evolução (pp)","Data pré","Data pós"]
-    st.dataframe(frame[visible],hide_index=True,use_container_width=True,height=400)
-    st.download_button("⬇️ Exportar participantes filtrados (CSV)",data=csv_bytes(frame[visible]),
-                       file_name="FBP_participantes.csv",mime="text/csv")
-    st.divider()
-    st.markdown("#### Ficha individual")
-    choices = frame.sort_values(["Nome","Instituição"]).apply(lambda r: f"{r['Nome']} · {r['Instituição']} · {r['participante_id'][-8:]}",axis=1).tolist()
-    chosen = st.selectbox("Selecionar participante",options=list(range(len(choices))),format_func=lambda x:choices[x])
-    row = frame.sort_values(["Nome","Instituição"]).iloc[chosen]
-    st.markdown(f"**Nome:** {row['Nome']}  \n**Instituição:** {row['Instituição']}  \n**Função:** {row['Função']}  \n**Edição:** {row['Edição']}  \n**Estado:** {row['Estado']}")
-    c1,c2,c3 = st.columns(3)
-    c1.metric("Pré-teste",fmt_pct(row["Pré (%)"]))
-    c2.metric("Pós-teste",fmt_pct(row["Pós (%)"]))
-    c3.metric("Evolução",fmt_pp(row["Evolução (pp)"]))
-    if row["N.º pós-testes"] > 1 or row["N.º pré-testes"] > 1:
-        st.warning("Foram encontrados registos repetidos com este identificador. A análise usa a primeira submissão completa e mantém os restantes para auditoria.")
-
-
-def learning_page(frame, qdf):
-    st.subheader("Aprendizagem por pergunta e competência")
-    if qdf.empty:
-        st.info("São necessários participantes com os dois testes concluídos para comparar as respostas por pergunta.")
-        return
-    summary = question_summary(qdf, QUESTIONS)
-    box1, box2 = st.columns([1.5,1],gap="large")
-    with box1:
-        section_title("PERCENTAGEM DE RESPOSTAS CORRETAS — 15 PERGUNTAS")
-        m = summary.melt(id_vars="Pergunta",value_vars=["Pré (%)","Pós (%)"],var_name="Avaliação",value_name="Corretas (%)")
-        fig=px.bar(m,x="Pergunta",y="Corretas (%)",color="Avaliação",barmode="group",
-                   color_discrete_map={"Pré (%)":ACCENT,"Pós (%)":TEAL})
-        fig.update_yaxes(range=[0,100]);fig.update_xaxes(title_text="")
-        st.plotly_chart(chart_layout(fig,360),use_container_width=True)
-    with box2:
-        section_title("EVOLUÇÃO POR COMPETÊNCIA")
-        topics=[]
-        for topic,ns in TOPICS.items():
-            k=qdf[qdf["Pergunta"].isin(ns)]
-            if k.empty:continue
-            b=round(k["Pré correto"].mean()*100,1);a=round(k["Pós correto"].mean()*100,1)
-            topics.append({"Competência":topic,"Pré (%)":b,"Pós (%)":a,"Evolução (pp)":round(a-b,1)})
-        tdf=pd.DataFrame(topics)
-        st.dataframe(tdf,hide_index=True,use_container_width=True,height=350)
-    section_title("DETALHE POR PERGUNTA")
-    st.dataframe(summary[["Pergunta","Tema","Enunciado","N","Pré (%)","Pós (%)","Evolução (pp)"]],
-                 hide_index=True,use_container_width=True,height=400)
-    st.download_button("⬇️ Exportar resultados por pergunta (CSV)",data=csv_bytes(summary),file_name="FBP_perguntas.csv",mime="text/csv")
-    index=st.selectbox("Analisar uma pergunta",options=list(range(1,16)),format_func=lambda n:f"Pergunta {n:02d} — {QUESTIONS[n-1]['prompt'][:90]}")
-    q=QUESTIONS[index-1]
-    st.markdown(f"**{q['prompt']}**")
-    ans_letters={"a":"A", "b":"B","c":"C","d":"D"}
-    for code,txt in q["options"].items():
-        mark="✅" if code==ANSWER_KEY[index] else ""
-        st.write(f"{mark} **{ans_letters[code]}.** {txt}")
-    small=qdf[qdf["Pergunta"]==index]
-    c1,c2,c3=st.columns(3)
-    c1.metric("Corretas no pré",fmt_pct(small["Pré correto"].mean()*100))
-    c2.metric("Corretas no pós",fmt_pct(small["Pós correto"].mean()*100))
-    c3.metric("Evolução",fmt_pp((small["Pós correto"].mean()-small["Pré correto"].mean())*100))
-    st.caption("A chave de respostas provém da grelha de correção do documento original. O acesso ao painel deve ser reservado à equipa técnica enquanto decorrerem avaliações.")
-
-
-def quality_page(analysis, frame):
-    st.subheader("Qualidade e consistência dos dados")
-    c1,c2,c3,c4=st.columns(4)
-    c1.metric("Submissões pré (bruto)",str(analysis["raw_pre_count"]))
-    c2.metric("Submissões pós (bruto)",str(analysis["raw_pos_count"]))
-    c3.metric("Pós sem pré correspondente",str(analysis["orphan_post_count"]))
-    c4.metric("Ocorrências de auditoria",str(len(analysis["anomalies"])))
-    st.caption("Participantes = identificadores únicos no pré-teste. Submissões = formulários recebidos. Podem divergir por duplicados, dados incompletos ou registos órfãos.")
-    st.markdown("#### Problemas detetados")
-    anomalies = analysis["anomalies"]
-    if anomalies.empty:
-        st.success("Não foram encontrados os problemas abrangidos pelas verificações automáticas.")
+    if not n_pre:
+        st.info("Ainda não existem pré-testes completos nos filtros selecionados. O painel irá mostrar as dificuldades assim que chegarem respostas.")
+    elif n_pre < 5:
+        st.info(f"Há apenas {n_pre} pré-teste(s) completo(s). Aguarda pelo menos 5 respostas para interpretar tendências; as percentagens ainda são muito instáveis.")
+    elif len(qlow):
+        names = ", ".join(qlow.sort_values("Acerto (%)")["Pergunta"].head(5))
+        st.warning(f"**Atenção para a formação:** {len(qlow)} pergunta(s) tiveram menos de metade de respostas certas. Prioriza {names} na explicação dos conteúdos.")
     else:
-        st.dataframe(anomalies,hide_index=True,use_container_width=True)
-        st.download_button("⬇️ Exportar auditoria (CSV)",csv_bytes(anomalies),"FBP_auditoria.csv","text/csv")
-    st.markdown("#### Participantes a verificar")
-    if not frame.empty:
-        subset=frame[(frame["Estado"]!="Pré e pós concluídos") | (frame["N.º pré-testes"]>1) | (frame["N.º pós-testes"]>1) | frame["Inconsistência nota pré"] | frame["Inconsistência nota pós"]]
-        if subset.empty:
-            st.success("Sem casos individuais pendentes nos filtros atuais.")
+        st.success("Até ao momento, nenhuma pergunta ficou abaixo de 50% de acertos.")
+    if bad_pre or not suspects.empty:
+        st.caption(f"⚠️ Há {len(suspects)} possível(is) duplicado(s) de nome/instituição e {int(bad_pre)} diferença(s) no cálculo das notas. Consulta «Registos a verificar» abaixo.")
+
+    if n_pre:
+        st.divider()
+        st.markdown("#### Onde estão as maiores dificuldades?")
+        st.caption("Percentagem de respostas corretas no pré-teste. As perguntas aparecem da mais difícil para a mais fácil. Não são apresentadas as respostas certas.")
+        hardest = qdf.sort_values(["Acerto (%)", "Número"], ascending=[True, True]).head(5)
+        a,b = st.columns([.72, 1.28], gap="large")
+        with a:
+            st.plotly_chart(question_chart(hardest), use_container_width=True,
+                            config={"displayModeBar": False})
+        with b:
+            for _, row in hardest.iterrows():
+                st.markdown(f"**{row['Pergunta']} · {fmt_pct(row['Acerto (%)'])} de acertos**  ")
+                st.write(row["Enunciado"])
+        with st.expander("Ver análise de todas as 15 perguntas"):
+            all_questions = qdf.sort_values("Número")[
+                ["Pergunta","Tema","Enunciado","Acertos","N","Acerto (%)"]].copy()
+            st.dataframe(all_questions, use_container_width=True, hide_index=True, height=435,
+                         column_config={"Acerto (%)": st.column_config.ProgressColumn(
+                             "Acerto (%)", min_value=0, max_value=100, format="%.0f%%")})
+            st.download_button("Exportar análise por pergunta", csv_content(all_questions),
+                               "FBP_pre_perguntas.csv", "text/csv")
+        with st.expander("Ver resultados por tema"):
+            topics = topic_performance(qdf)
+            st.dataframe(topics[["Tema","Acerto (%)"]], use_container_width=True,
+                         hide_index=True, column_config={"Acerto (%)":st.column_config.ProgressColumn(
+                             "Acerto (%)", min_value=0, max_value=100, format="%.0f%%")})
+
+    st.divider()
+    st.markdown("#### Participação e qualidade dos registos")
+    if access and not frame.empty:
+        search = st.text_input("Pesquisar participante", placeholder="Escreve um nome", key="pre_search")
+        display = frame[frame["Nome"].str.contains(search, case=False, regex=False, na=False)] if search else frame
+        cols = ["Nome", "Instituição", "Acertos pré", "Pré (%)", "Data pré"]
+        st.dataframe(display[cols].sort_values("Nome"), use_container_width=True,
+                     hide_index=True, height=min(420, 42*(len(display)+1)+15))
+        st.download_button("Exportar participantes", csv_content(frame[cols]),
+                           "FBP_pre_participantes.csv", mime="text/csv")
+    elif not access:
+        st.caption("Os nomes dos participantes ficam disponíveis quando configurares `DASHBOARD_PASSWORD` nas Secrets.")
+    else:
+        st.caption("Sem participantes registados.")
+
+    count_anomalies = len(anomalies)
+    if count_anomalies or not suspects.empty or (not frame.empty and frame["Respostas pré"].lt(15).any()):
+        with st.expander(f"Registos a verificar ({count_anomalies} alertas técnicos; {len(suspects)} possíveis nomes repetidos)"):
+            if not access:
+                st.caption("Configura a palavra-passe do dashboard para consultar os detalhes individuais.")
+            else:
+                if not suspects.empty:
+                    st.markdown("**Possíveis inscrições duplicadas** — mesmo nome e instituição, mas identificadores diferentes. Confirmar antes de eliminar qualquer registo.")
+                    st.dataframe(suspects, hide_index=True, use_container_width=True)
+                if not anomalies.empty:
+                    st.markdown("**Alertas automáticos**")
+                    st.dataframe(anomalies, hide_index=True, use_container_width=True)
+                incomplete = frame[frame["Pré (%)"].isna()]
+                if not incomplete.empty:
+                    st.markdown("**Pré-testes incompletos**")
+                    st.dataframe(incomplete[["Nome", "Instituição", "Respostas pré"]],
+                                 hide_index=True, use_container_width=True)
+    else:
+        st.caption("Não foram detetadas anomalias de duplicados por identificador nem discrepâncias de notas.")
+
+
+def post_view(frame, raw_pre, access, question_records):
+    st.markdown("#### Resultados após a formação")
+    pairs = frame[frame["Estado"] == "Pré e pós concluídos"].copy() if not frame.empty else frame.copy()
+    n_all = len(frame[frame["Pré (%)"].notna()]) if not frame.empty else 0
+    n_pos = len(pairs)
+    a,b,c,d = st.columns(4)
+    a.metric("Pré-testes completos", n_all)
+    b.metric("Pós-testes associados", f"{n_pos} / {n_all}")
+    if not n_pos:
+        c.metric("Média pós-teste", "—")
+        d.metric("Evolução da aprendizagem", "—")
+        st.info("Assim que forem submetidos pós-testes, vais ver aqui a comparação das notas e quem ainda falta concluir.")
+        return
+    pre_mean = pairs["Pré (%)"].mean()
+    pos_mean = pairs["Pós (%)"].mean()
+    delta = pos_mean - pre_mean
+    c.metric("Média pós-teste", fmt_pct(pos_mean))
+    d.metric("Evolução média", fmt_pp(delta))
+    st.caption("As médias são calculadas apenas para participantes com os dois testes completos e a identidade confirmada.")
+
+    st.divider()
+    l,r = st.columns([.85, 1.15], gap="large")
+    with l:
+        st.markdown("#### Evolução das classificações")
+        st.plotly_chart(avg_comparison(pre_mean, pos_mean), use_container_width=True,
+                        config={"displayModeBar": False})
+    with r:
+        st.markdown("#### Quem falta concluir o pós-teste?")
+        pending = frame[(frame["Estado"] != "Pré e pós concluídos") & frame["Pré (%)"].notna()].copy()
+        if not len(pending):
+            st.success("Todos os participantes do pré-teste têm um pós-teste válido associado.")
+        elif access:
+            st.dataframe(pending[["Nome","Instituição","Estado"]],
+                         use_container_width=True, hide_index=True,
+                         height=min(285,42*(len(pending)+1)+12))
         else:
-            st.dataframe(subset[["Nome","Instituição","Estado","N.º pré-testes","N.º pós-testes","Inconsistência nota pré","Inconsistência nota pós"]],use_container_width=True,hide_index=True)
-            st.download_button("⬇️ Exportar pendências (CSV)",csv_bytes(subset),"FBP_pendentes.csv","text/csv")
-    with st.expander("Como são calculadas e ligadas as avaliações?"):
-        st.markdown("""
-- A ligação utiliza **`participante_id`**, criado no pré-teste e recuperado no pós-teste. Não é feita correspondência pelo nome.
-- São consideradas **15 respostas obrigatórias**. Uma submissão com menos respostas não entra nas médias de aprendizagem.
-- Para um mesmo identificador, mantém-se a **primeira submissão completa**; repetição é assinalada para auditoria.
-- Só conta como pós-teste válido uma submissão completa com **`confirma_identidade = sim`**.
-- O sistema recalcula os acertos diretamente a partir de **`q01`…`q15`**, comparando-os com a grelha do formador. Diferenças com `total_acertos` guardado no Kobo ficam sinalizadas.
-- Evolução em pontos percentuais = percentagem do pós-teste menos a do pré-teste. Não confundir com crescimento percentual relativo.
-- Os dados são consultados apenas para leitura; **o dashboard nunca altera os registos no Kobo**.
-""")
+            st.info(f"Existem {len(pending)} participante(s) sem pós-teste válido. Consulta de nomes disponível com palavra-passe.")
 
-
-def change_page(name):
-    st.session_state["fbp_page"] = name
+    st.divider()
+    st.markdown("#### Resultados individuais")
+    if access:
+        cols = ["Nome","Instituição","Pré (%)","Pós (%)","Evolução (pp)","Estado"]
+        st.dataframe(frame[cols].sort_values("Nome"), use_container_width=True,
+                     hide_index=True, height=min(470,42*(len(frame)+1)+12),
+                     column_config={"Pré (%)":st.column_config.NumberColumn(format="%.1f%%"),
+                                    "Pós (%)":st.column_config.NumberColumn(format="%.1f%%"),
+                                    "Evolução (pp)":st.column_config.NumberColumn(format="%+.1f pp")})
+        st.download_button("Exportar comparação individual", csv_content(frame[cols]),
+                           "FBP_pre_pos_individual.csv", mime="text/csv")
+    else:
+        st.caption("Resultados individuais protegidos. Configura `DASHBOARD_PASSWORD` nas Secrets.")
+    if not question_records.empty:
+        with st.expander("Análise pré/pós por pergunta (mesmos participantes)"):
+            qs = question_summary(question_records, QUESTIONS)
+            cols = ["Pergunta","Tema","N","Pré (%)","Pós (%)","Evolução (pp)"]
+            st.dataframe(qs[cols], use_container_width=True, hide_index=True)
+            st.download_button("Exportar evolução por pergunta", csv_content(qs),
+                               "FBP_pre_pos_perguntas.csv", mime="text/csv")
 
 
 def main():
-    basic_auth()
-    base=setting("KOBO_BASE_URL",DEFAULT_BASE_URL)
-    pre_uid=setting("KOBO_PRE_UID",PRE_UID)
-    pos_uid=setting("KOBO_POS_UID",POS_UID)
-    token=setting("KOBO_TOKEN")
-    if "fbp_page" not in st.session_state:
-        st.session_state["fbp_page"] = "Visão geral"
+    access = secure_auth()
+    token = setting("KOBO_TOKEN")
+    base = setting("KOBO_BASE_URL", DEFAULT_BASE_URL)
+    pre_uid = setting("KOBO_PRE_UID", PRE_UID)
+    pos_uid = setting("KOBO_POS_UID", POS_UID)
 
     with st.sidebar:
-        logo=ROOT/"assets"/"logo_pch.png"
-        brand_logo, brand_text = st.columns([.85, 2.35], gap="small", vertical_alignment="center")
-        with brand_logo:
+        col_icon,col_title = st.columns([.65, 2.5], gap="small", vertical_alignment="center")
+        with col_icon:
+            logo = ROOT / "assets" / "logo_pch.png"
             if logo.exists():
-                st.image(str(logo), width=68)
-        with brand_text:
-            st.markdown('<div class="fbp-brand-title">PCH · Formação FBP</div>'
-                        '<div class="fbp-brand-subtitle">Monitorização da aprendizagem</div>', unsafe_allow_html=True)
-        st.markdown('<div class="fbp-small-separator"></div><div class="fbp-nav-title">NAVEGAÇÃO</div>', unsafe_allow_html=True)
-        nav_items = [
-            ("Visão geral", "📊  Visão geral", "nav_visao"),
-            ("Participantes", "👥  Participantes", "nav_participantes"),
-            ("Aprendizagem", "📈  Aprendizagem", "nav_aprendizagem"),
-            ("Qualidade dos dados", "🛡️  Qualidade dos dados", "nav_qualidade"),
-        ]
-        for page_name, label, key in nav_items:
-            st.button(label, key=key,
-                      type="primary" if st.session_state["fbp_page"] == page_name else "secondary",
-                      on_click=change_page, args=(page_name,), use_container_width=True)
-        page=st.session_state["fbp_page"]
-        st.markdown('<div class="fbp-small-separator"></div><div class="fbp-nav-title">DADOS</div>', unsafe_allow_html=True)
-        if st.button("↻  Atualizar Kobo", key="refresh_kobo", use_container_width=True):
-            load_kobo.clear()
+                st.image(str(logo), width=48)
+        with col_title:
+            st.markdown('<div class="fbp-brand">PCH · FBP</div><div class="fbp-sub">Avaliação da formação</div>', unsafe_allow_html=True)
+        st.divider()
+        st.caption("ACOMPANHAMENTO")
+        goal = st.number_input("Meta de participantes", min_value=1, max_value=1000, value=40, step=1)
+        if st.button("↻ Atualizar dados Kobo", use_container_width=True):
+            fetch_both.clear()
             st.rerun()
-        st.caption("Atualização automática a cada 3 minutos.")
-        with st.expander("⚙️ Ferramentas", expanded=False):
-            demo=st.toggle("Modo demonstração", value=False, help="Mostra dados fictícios para experimentar o painel.")
-            if demo:
-                st.caption("Os valores apresentados não são dados reais.")
-        if not token and not demo:
-            st.caption("⚠️ Falta configurar KOBO_TOKEN em Secrets.")
+        st.caption("Atualização automática: até 2 minutos")
 
-    st.markdown('<div class="fbp-hero"><h1>Financiamento Baseado em Performance</h1>'
-                '<p>Projeto de Capital Humano · Avaliação da Formação · Pré-teste e Pós-teste</p></div>',
+    st.title("Formação FBP")
+    st.markdown('<div class="fbp-hint">Acompanhamento do pré-teste e evolução da aprendizagem · Projeto de Capital Humano</div>',
                 unsafe_allow_html=True)
-
-    if demo:
-        raw_pre,raw_pos=demo_data()
-        st.warning("MODO DEMONSTRAÇÃO — Todos os dados apresentados são fictícios e não provêm do teu servidor Kobo.")
-    else:
-        if not token:
-            st.warning("É necessário configurar a credencial Kobo para apresentar os resultados reais.")
-            st.markdown("**Ativar a ligação**: no Streamlit Cloud, abre **Manage app → Settings → Secrets**, insere a configuração abaixo e guarda.")
+    if not token:
+        st.warning("Falta configurar `KOBO_TOKEN` nas Secrets do Streamlit Cloud.")
+        with st.expander("Mostrar configuração", expanded=True):
             st.code('KOBO_BASE_URL = "https://kf.kobo.ucp-pch.org"\n'
                     'KOBO_PRE_UID = "a9UStPiv4QDyzfZeHiBzwu"\n'
                     'KOBO_POS_UID = "a2JXAwUZP7h3z3nUmpfchj"\n'
-                    'KOBO_TOKEN = "INSERIR_TOKEN_PRIVADO"', language="toml")
-            st.info("O token não deve ser introduzido no app.py nem publicado no GitHub. Podes usar Ferramentas → Modo demonstração para visualizar o painel sem credenciais.")
-            st.stop()
-        digest=hashlib.sha256(token.encode("utf8")).hexdigest()
-        try:
-            with st.spinner("A consultar os pré e pós-testes na API Kobo…"):
-                raw_pre,raw_pos=load_kobo(base,pre_uid,pos_uid,digest,token)
-        except KoboAPIError as exc:
-            st.error(f"Não foi possível carregar os dados: {exc}")
-            st.info("Confirma domínio, permissões de leitura dos dois formulários e conectividade. Não é necessário qualquer ficheiro CSV.")
-            st.stop()
-    analysis=build_analysis(raw_pre,raw_pos)
-    full=analysis["participants"]
+                    'KOBO_TOKEN = "INSERIR_TOKEN_PRIVADO"\n'
+                    'DASHBOARD_PASSWORD = "ESCOLHER_PALAVRA_PASSE"',language="toml")
+        st.stop()
+    try:
+        digest = hashlib.sha256(token.encode("utf8")).hexdigest()
+        with st.spinner("A carregar respostas do Kobo…"):
+            pre_raw, pos_raw, updated = fetch_both(base, pre_uid, pos_uid, digest, token)
+    except KoboAPIError as e:
+        st.error(f"Não foi possível obter os dados: {e}")
+        st.stop()
+    except Exception:
+        st.error("Falha inesperada ao ler os dados. Consulta os logs do Streamlit (sem divulgar as credenciais).")
+        st.stop()
 
-    if not full.empty:
-        with st.sidebar:
-            st.markdown("#### Filtros")
-            editions=["Todas"]+sorted(full["Edição"].dropna().unique().tolist())
-            edition=st.selectbox("Edição",editions)
-            institution=st.selectbox("Instituição",["Todas"]+sorted(full["Instituição"].dropna().unique().tolist()))
-            status=st.multiselect("Estado",sorted(full["Estado"].dropna().unique().tolist()),default=[])
-            lookup=st.text_input("Pesquisar nome",placeholder="Nome do participante")
-        filtered=filter_dashboard(full,edition,institution,status,lookup)
-    else:
-        filtered=full.copy()
-        st.info("Ainda não há participantes com identificador único no pré-teste.")
+    report = build_analysis(pre_raw, pos_raw)
+    full = report["participants"]
+    with st.sidebar:
+        if not full.empty:
+            st.caption("FILTROS")
+            editions = sorted(full["Edição"].dropna().unique())
+            if len(editions) > 1:
+                selected_edition = st.selectbox("Edição", ["Todas",*editions])
+            else:
+                selected_edition = editions[0] if editions else "Todas"
+                st.caption(f"Edição: {selected_edition}")
+            inst = sorted(full["Instituição"].dropna().unique())
+            selected_inst = st.selectbox("Instituição", ["Todas",*inst]) if len(inst)>1 else "Todas"
+        else:
+            selected_edition,selected_inst = "Todas","Todas"
+        st.divider()
+        st.caption(f"Fonte: Kobo PCH · {updated}")
 
-    allowed=set(filtered["participante_id"].tolist()) if not filtered.empty else set()
-    qdf=analysis["questions"]
-    qdf=qdf[qdf["participante_id"].isin(allowed)] if not qdf.empty else qdf
-    if page=="Visão geral":overview(filtered,analysis)
-    elif page=="Participantes":participants_page(filtered)
-    elif page=="Aprendizagem":learning_page(filtered,qdf)
-    else:quality_page(analysis,filtered)
+    filtered = full.copy()
+    if not filtered.empty:
+        if selected_edition != "Todas":
+            filtered = filtered[filtered["Edição"] == selected_edition]
+        if selected_inst != "Todas":
+            filtered = filtered[filtered["Instituição"] == selected_inst]
+    ids = set(filtered["participante_id"]) if not filtered.empty else set()
+    qrecords = report["questions"]
+    if not qrecords.empty:
+        qrecords = qrecords[qrecords["participante_id"].isin(ids)]
+    st.caption(f"Edição: {selected_edition}" + (f"  ·  {selected_inst}" if selected_inst != "Todas" else ""))
 
-    st.divider()
-    source_label="Dados demonstrativos" if demo else "Fonte: KoboToolbox PCH (API v2)"
-    st.caption(f"{source_label} · Edição 0001 ou outras edições, conforme os registos · 15 perguntas · Consulta às {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC · Desenvolvido para o acompanhamento da formação FBP")
+    pre_anomalies = report["anomalies"]
+    if not pre_anomalies.empty:
+        pre_anomalies = pre_anomalies[pre_anomalies["Tipo"].str.contains("pré", case=False, na=False)]
+    tab_pre, tab_pos = st.tabs(["Durante o pré-teste", "Resultados finais"])
+    with tab_pre:
+        pre_view(filtered, pre_raw, goal if selected_inst == "Todas" else None, access, pre_anomalies)
+    with tab_pos:
+        post_view(filtered, pre_raw, access, qrecords)
+    st.markdown('<div class="fbp-foot">PCH · FBP | 15 perguntas | Resultados recalculados a partir das respostas do Kobo. Não altera os dados originais.</div>', unsafe_allow_html=True)
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     main()

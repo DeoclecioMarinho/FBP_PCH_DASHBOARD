@@ -1,68 +1,63 @@
-# Painel de Controlo PCH — Formação FBP
+# Dashboard PCH · Formação FBP — v3 simplificada
 
-Dashboard Streamlit preparado para **dois formulários Kobo diretamente ligados**, sem CSV, ficheiros auxiliares nem carregamentos manuais de participantes.
+**Objetivo:** acompanhar, durante a formação de aproximadamente **40 participantes**, quem concluiu o pré-teste, a qualidade dos registos e **quais as perguntas/temas que precisam de reforço**. No fim, comparar o pré-teste com o pós-teste.
 
-## Projetos configurados
+## O que mudou
 
-- Servidor: `https://kf.kobo.ucp-pch.org`
-- Pré-teste — UID: `a9UStPiv4QDyzfZeHiBzwu`
-- Pós-teste — UID: `a2JXAwUZP7h3z3nUmpfchj`
+- **Apenas dois separadores**, sem o menu antigo de quatro páginas: **Durante o pré-teste** e **Resultados finais**.
+- Painel principal orientado para decisões rápidas: completados vs. meta de 40, média, perguntas com menos de 50% de respostas certas, cinco perguntas mais difíceis e registos suspeitos.
+- **Meta ajustável** na barra lateral. Importante: o número por completar é **estimativa** (meta menos pré-testes completos), não uma lista de nomes dos ausentes. O Kobo só conhece quem já respondeu.
+- Lista de participantes, auditoria e exportações numa área secundária, sem poluir o painel.
+- Antes de 5 pré-testes completos, mostra aviso de amostra pequena; não toma as tendências como firmes.
+- Compara **só pares válidos** de pré/pós-testes pelo mesmo `participante_id`.
+- O utilizador nunca vê a grelha de respostas certas no dashboard.
+- **Sem modo demonstração na interface pública**.
 
-A app consulta a API Kobo v2 `/api/v2/assets/{uid}/data/`, incluindo todas as páginas (`next`). O painel é **só de leitura**.
+## Publicar na mesma aplicação Streamlit
 
-## Instalação local
+1. No repositório GitHub já ligado ao Streamlit, substitui `app.py`, `analysis.py`, `kobo_client.py`, `questionario.json`, `requirements.txt` e adiciona `monitor.py`. Mantém a pasta `assets/logo_pch.png`.
+2. Faz *Commit changes*. O Streamlit Cloud atualizará a aplicação automaticamente.
+3. Em **Manage app → Settings → Secrets**, confirma a configuração (não incluir o token no GitHub):
 
-1. Instala Python 3.11+.
-2. Descompacta este projeto e, no terminal, abre a pasta que contém `app.py`.
-3. Instala as dependências:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Cria localmente `.streamlit/secrets.toml`, copiando o exemplo `.streamlit/secrets.toml.example`.
-5. Substitui `COLOCAR_O_TOKEN_AQUI` pelo teu token Kobo. **Nunca coloques o token em `app.py` ou num repositório público.**
-6. Executa:
-   ```bash
-   streamlit run app.py
-   ```
+```toml
+KOBO_BASE_URL = "https://kf.kobo.ucp-pch.org"
+KOBO_PRE_UID = "a9UStPiv4QDyzfZeHiBzwu"
+KOBO_POS_UID = "a2JXAwUZP7h3z3nUmpfchj"
+KOBO_TOKEN = "COLOCAR_AQUI_NOVO_TOKEN"
+DASHBOARD_PASSWORD = "ESCOLHER_UMA_PALAVRA_PASSE_FORTE"
+```
 
-## Publicação no Streamlit Community Cloud
+A configuração `DASHBOARD_PASSWORD` é recomendada para proteger nomes e resultados individuais. Se não for configurada, o dashboard apresenta **apenas dados agregados**, sem tabelas nominativas ou exportações de identificação pessoal.
 
-1. Cria um repositório no GitHub e carrega estes ficheiros. Não publiques `.streamlit/secrets.toml`.
-2. No Streamlit Cloud, cria uma app ligada ao repositório, com `app.py` como ficheiro principal.
-3. Em **App settings → Secrets**, cola o conteúdo de `.streamlit/secrets.toml`, substituindo o token pelo valor real.
-4. Recomenda-se acrescentar a chave opcional `DASHBOARD_PASSWORD = "UMA_PALAVRA_PASSE_FORTE"` para restringir o acesso aos dados nominais.
-5. Guarda os secrets e faz **Reboot** da app. Confirma os dois formulários e os totais na secção Qualidade dos dados.
+## Como usar durante a sessão
 
-> **Segurança:** uma API token é uma credencial de acesso, mesmo se a conta ou alguns dados forem públicos. Não a partilhes em documentação nem no GitHub. Como já a partilhaste na conversa, considera **revogá-la e emitir uma nova** antes da publicação, especialmente se o dashboard ficar acessível publicamente.
+1. Antes de começar a recolha, definir **meta 40** e selecionar a edição `0001` (se houver várias edições).
+2. Durante o pré-teste, clicar em **Atualizar dados Kobo** ou esperar até dois minutos pelo fim da cache.
+3. Quando houver respostas suficientes (idealmente 5 ou mais), observar **as cinco perguntas com menor taxa de acertos** e priorizá-las nas explicações do formador.
+4. Conferir alertas de registos duplicados ou notas divergentes em **Registos a verificar**.
+5. Depois do pós-teste, abrir **Resultados finais** para ver a evolução média e os participantes ainda sem avaliação final.
 
-## Estrutura
+## Definições dos indicadores
 
-- `app.py` — páginas Visão geral, Participantes, Aprendizagem, Qualidade dos dados; filtros e exportação CSV.
-- `kobo_client.py` — cliente API, paginação e tratamento seguro de falhas.
-- `analysis.py` — cruzamento por UUID, recálculo das notas, auditoria e agregações.
-- `questionario.json` — 15 perguntas e grelha do documento original.
-- `demo.py` — dados **fictícios**; ativa *Modo demonstração* na barra lateral.
-- `assets/logo_pch.png` — logótipo do projeto (versão melhorada do original).
-- `tests/test_analysis.py` — testes de cálculo, cruzamento, duplicados e casos sem associação.
+- **Pré-testes completos:** participantes com `participante_id` e 15 respostas válidas. Duplicados do mesmo ID são considerados uma só vez; possíveis nomes iguais com IDs diferentes são sinalizados, mas não fundidos automaticamente.
+- **Pré-testes por completar:** `máximo(0, meta - pré-testes completos)`. A meta é aproximada. **Não é possível saber os nomes dos ausentes sem uma lista prévia de presenças.**
+- **Média pré:** média de % de acertos de todos os pré-testes completos selecionados, **mesmo sem qualquer pós-teste**.
+- **Perguntas com dificuldade:** percentagem de pré-testes completos com resposta correta menor que 50%; antes de 5 respostas, não há alerta classificativo.
+- **Pós-testes associados:** pré e pós completos, `participante_id` igual e identidade confirmada.
+- **Evolução média:** percentagem média pós menos percentagem média pré **dos mesmos participantes** (pontos percentuais).
+- **Chave de correção:** preservada do formulário original, com 15 perguntas; recomenda-se a validação pedagógica pelo formador (particularmente a pergunta 2, que pode parecer ambígua).
 
-## Regras de análise
+## Segurança e atualização
 
-- Pré e pós são ligados exclusivamente por **`participante_id`** (UUID do pré-teste); nunca pelo nome.
-- Se existirem submissões repetidas com o mesmo identificador, a **primeira completa** é utilizada e o caso é sinalizado.
-- Para comparar notas, o pós-teste deve ter 15 respostas e `confirma_identidade = sim`.
-- A média do pré-teste **emparelhada** inclui só quem também respondeu validamente ao pós-teste. Isto permite calcular uma evolução justa da mesma amostra.
-- Nota em 15 = número de respostas iguais à grelha; percentagem = acertos/15×100; nota em 20 = acertos/15×20.
-- O painel recalcula a partir das respostas `q01…q15`. Se `total_acertos` gravado no Kobo for diferente, a auditoria apresenta a ocorrência.
-- Se ainda não houver pós-teste, não se apresenta uma evolução fictícia.
-- Filtros: edição, instituição, situação do participante, pesquisa de nome.
-- Dados atualizados periodicamente em cache (3 minutos); botão lateral força atualização.
+- O token vai **só em Secrets**, nunca no código ou URL. Como foi partilhado na conversa, recomenda-se substituí-lo por um novo.
+- O código faz pedidos exclusivamente de leitura à API Kobo.
+- **Cache: até 2 minutos**. O botão de atualização força uma nova consulta.
+- Dados reais precisam ser validados na instância instalada; a verificação local foi feita com dados de ensaio e testes automatizados.
 
-## Validação operacional
+## Testes locais
 
-1. Confirma que o token permite ler **ambos** os projetos.
-2. Se quiseres, experimenta primeiro a app no *Modo demonstração*; identifica-se claramente como fictício.
-3. Volta ao modo real e verifica os totais: devem corresponder às submissões válidas do Kobo.
-4. Em Qualidade dos dados, verifica registos sem `participante_id`, pós-testes órfãos e notas inconsistentes.
-5. Confirma manualmente um participante no Kobo e compara acertos, percentagens e evolução com o painel.
-
-O ambiente de desenvolvimento utilizado para preparar este pacote não teve conectividade DNS com `kf.kobo.ucp-pch.org`; por isso, **não foram consultados nem validados os quatro registos reais**. A ligação real deve ser confirmada quando a app for executada num ambiente com acesso ao servidor.
+```bash
+pip install -r requirements.txt pytest
+python -m pytest -q tests
+streamlit run app.py
+```
