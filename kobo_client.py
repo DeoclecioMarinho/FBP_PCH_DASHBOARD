@@ -74,3 +74,35 @@ def fetch_submissions(base_url: str, asset_uid: str, token: str, max_pages: int 
         raise KoboAPIError("Falha de certificado HTTPS no servidor Kobo.") from None
     except requests.exceptions.ConnectionError:
         raise KoboAPIError("Não foi possível contactar o servidor Kobo. Verifica a rede e o domínio.") from None
+
+
+def delete_submission(base_url: str, asset_uid: str, submission_id: int, token: str):
+    """DELETE de UMA submissão, após confirmação independente na interface.
+
+    Endpoint oficial /api/v2/assets/{uid}/data/{id}/. Nunca apaga projetos/formulários.
+    """
+    if not token or not token.strip() or not str(asset_uid).isalnum():
+        raise KoboAPIError('Credenciais ou identificador de projeto inválidos.')
+    parsed = urlparse(base_url.rstrip('/'))
+    if parsed.scheme != 'https' or not parsed.netloc:
+        raise KoboAPIError('O servidor deve utilizar HTTPS.')
+    try:
+        iid=int(submission_id)
+    except (TypeError, ValueError):
+        raise KoboAPIError('Identificador de submissão inválido.') from None
+    if iid <= 0:
+        raise KoboAPIError('Identificador de submissão inválido.')
+    url=f"{base_url.rstrip('/')}/api/v2/assets/{asset_uid}/data/{iid}/"
+    try:
+        r=requests.delete(url,headers={'Authorization':f'Token {token.strip()}',
+                                       'Accept':'application/json'},
+                          timeout=(10,35), allow_redirects=False)
+    except requests.exceptions.RequestException:
+        raise KoboAPIError('Falha de rede ao tentar eliminar a submissão.') from None
+    if r.status_code in (200,202,204):
+        return True
+    if r.status_code in (401,403):
+        raise KoboAPIError('A conta Kobo não tem permissão para eliminar esta submissão.')
+    if r.status_code in (301,302,303,307,308):
+        raise KoboAPIError('A API Kobo redirecionou o pedido de eliminação; operação cancelada.')
+    raise KoboAPIError(f'Eliminação recusada pelo Kobo (HTTP {r.status_code}).')
