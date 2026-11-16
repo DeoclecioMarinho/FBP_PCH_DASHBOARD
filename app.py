@@ -171,6 +171,7 @@ def side_nav():
         if st.button('↻  Atualizar Kobo',use_container_width=True,key='reload'):
             fetch_both.clear();st.rerun()
         st.caption('Atualização automática: a cada 2 minutos.')
+        st.caption('FBP v8.0 · reconciliação e resultados individuais')
     return st.session_state.page
 
 
@@ -196,6 +197,45 @@ def selection_panel(df):
         return edition,institution
 
 
+
+def participant_table_view(participants):
+    """Tabela nominal a partir da MESMA base reconciliada dos indicadores.
+
+    Uma linha por participante_id; a origem do pós continua visível.
+    A vista é curta e mantém a tabela integral no CSV de exportação.
+    """
+    names=["Participante", "Instituição", "Pré", "Pós", "Evolução", "Estado / origem"]
+    if participants.empty:
+        return pd.DataFrame(columns=names)
+    if participants["participante_id"].duplicated().any():
+        raise ValueError("A reconciliação produziu IDs de participantes repetidos")
+
+    def score(value):
+        return "—" if pd.isna(value) else f"{int(value)}/15"
+
+    def difference(value):
+        return "—" if pd.isna(value) else (f"{float(value):+.1f} pp".replace(".", ","))
+
+    def source(row):
+        state=str(row["Estado"] or "")
+        origin=str(row["Origem pós"] or "")
+        if "provisório" in origin: return "Recuperado · provisório"
+        if "validado" in origin: return "Recuperado · validado"
+        if "reassociado" in origin: return "Oficial · reassociado"
+        if state=="Pré e pós concluídos": return "Oficial"
+        return compact_status(state)
+
+    src=participants.sort_values("Nome",kind="stable")
+    return pd.DataFrame({
+        "Participante":src["Nome"].fillna(""),
+        "Instituição":src["Instituição"].map(short_institution),
+        "Pré":src["Acertos pré"].map(score),
+        "Pós":src["Acertos pós"].map(score),
+        "Evolução":src["Evolução (pp)"].map(difference),
+        "Estado / origem":src.apply(source,axis=1),
+    })
+
+
 def participant_table(df, key='participant_rows', page_size=10):
     """Tabela compacta com nomes e avaliação individual, sem scroll interno."""
     if df.empty:
@@ -212,18 +252,11 @@ def participant_table(df, key='participant_rows', page_size=10):
     if src.empty:
         st.caption('Nenhum participante corresponde à pesquisa.')
         return
-    src=src.sort_values('Nome').copy()
-    table=pd.DataFrame({
-        'Nome':src['Nome'],
-        'Instituição':src['Instituição'].map(short_institution),
-        'Pré':src['Acertos pré'].map(lambda n:'—' if pd.isna(n) else f'{int(n)}/15'),
-        'Pós':src['Acertos pós'].map(lambda n:'—' if pd.isna(n) else f'{int(n)}/15'),
-        'Evolução':src['Evolução (pp)'].map(diff),
-        'Situação':src['Estado'].map(compact_status),
-    })
-    clean_table(table, [('Participante','Nome'),('Instituição','Instituição'),('Pré','Pré'),
-                        ('Pós','Pós'),('Evolução','Evolução'),('Estado','Situação')],
-                key=key,size=page_size,widths=[33,17,10,10,14,16])
+    table=participant_table_view(src)
+    clean_table(table, [('Participante','Participante'),('Instituição','Instituição'),
+                        ('Pré','Pré'),('Pós','Pós'),('Evolução','Evolução'),
+                        ('Estado / origem','Estado / origem')],
+                key=key,size=page_size,widths=[30,17,9,9,14,21])
     st.download_button('Exportar resultados individuais (CSV)',data=csv(src),
                        file_name='FBP_resultados_por_participante.csv',mime='text/csv',
                        key=f'{key}_download')
@@ -283,9 +316,14 @@ def view_dashboard(df, pre_raw, raw_pre_count, raw_pos_count, qpre, access):
     pre_mean=valid['Pré (%)'].mean() if npre else None
     gain=paired['Evolução (pp)'].mean() if npost else None
     cards([('Participantes com pré-teste',npre,'Registos únicos e completos'),
-           ('Pós-testes associados',npost,f'{pending} pendentes · {recuperados} recuperado(s) e validados'),
+           ('Pós-testes associados',npost,f'{pending} pendentes · {recuperados} recuperado(s) provisório(s)'),
            ('Média do pré-teste',pct(pre_mean),'Conhecimentos iniciais'),
            ('Evolução média',diff(gain) if npost else '—','Apenas participantes com ambos os testes')])
+    heading('Resultados por participante','Uma linha por pessoa · pré, pós e origem da avaliação final')
+    if access:
+        participant_table(df,key='dashboard_participants',page_size=8)
+    else:
+        st.info('A tabela nominal está protegida. Define DASHBOARD_PASSWORD nas Secrets e inicia sessão para consultar os participantes.')
     left,right=st.columns([1.18,.9],gap='large')
     with left:
         heading('Conteúdos que precisam de reforço','Pré-teste · 5 perguntas')
@@ -311,17 +349,12 @@ def view_dashboard(df, pre_raw, raw_pre_count, raw_pos_count, qpre, access):
                     st.warning(f'{len(weak)} pergunta(s) com menos de 50% de acertos no pré-teste. Ver Aprendizagem.')
                 else: st.success('Nenhuma pergunta abaixo de 50% de acertos no pré-teste.')
         else:st.info('A aguardar os primeiros pré-testes.')
-        st.caption(f'Submissões recebidas: {raw_pre_count} pré e {raw_pos_count} pós (inclui eventuais repetições).')
+        st.caption(f'Base: {raw_pre_count} submissões no pré → {npre} participantes distintos · {raw_pos_count} submissões no pós Kobo. Repetições e recuperações são tratadas na análise.')
         if npost:
             st.markdown('**Comparação entre os mesmos participantes**')
             pre_p=paired['Pré (%)'].mean();pos_p=paired['Pós (%)'].mean()
             st.write(f'Pré-teste: **{pct(pre_p)}** → Pós-teste: **{pct(pos_p)}**')
         st.caption('O sistema não assume uma meta fixa de participantes.')
-    heading('Resultados por participante','Notas individuais e estado do pós-teste')
-    if access:
-        participant_table(df,key='dashboard_participants',page_size=10)
-    else:
-        st.info('A tabela nominal fica protegida. Para a consultar, define DASHBOARD_PASSWORD nas Secrets e entra com a palavra-passe.')
 
 
 def view_aprendizagem(df,qpre,paired_questions,access,pre_raw,pos_raw):
@@ -646,7 +679,28 @@ def main():
         st.markdown('<div class="sidebar-head">AVALIAÇÕES RECUPERADAS</div>',unsafe_allow_html=True)
         usar_provisorios=st.toggle('Incluir 2 pós provisórios',value=True,
             help='Desativa para comparar apenas os pós-testes submetidos no formulário oficial.')
-    pre_cur,pos_cur,curadoria_audit=apply_curadoria(pre_raw,pos_raw,usar_provisorios=usar_provisorios)
+    try:
+        pre_cur,pos_cur,curadoria_audit=apply_curadoria(
+            pre_raw,pos_raw,usar_provisorios=usar_provisorios)
+    except Exception:
+        st.error('Não foi possível carregar as regras de curadoria. Os números brutos NÃO serão apresentados como participantes únicos. Verifica curadoria.py e os logs.')
+        st.stop()
+    # Um app.py atualizado com curadoria.py antigo não pode apresentar 41
+    # submissões como 41 participantes sem aviso.
+    if 'origem_regras' not in curadoria_audit:
+        st.error('A reconciliação não está ativa: atualiza também curadoria.py no GitHub e reinicia a aplicação. Os totais não são fiáveis.')
+        st.stop()
+    if curadoria_audit.get('avisos'):
+        st.warning('Atenção à reconciliação: ' + '; '.join(curadoria_audit['avisos'][:3]) + '. Ver Qualidade dos dados.')
+    # Na amostra de referência, as regras têm de aplicar exclusões;
+    # se não aplicarem, devemos sinalizar possível formato de dados alterado.
+    if len(pre_raw)==41 and len(pos_raw)==29:
+        if (curadoria_audit.get('excluidos_pre',0)!=8
+            or curadoria_audit.get('excluidos_pos',0)!=1
+            or curadoria_audit.get('alias_pos',0)!=2
+            or len(curadoria_audit.get('provisorios',[]))!=(2 if usar_provisorios else 0)):
+            st.error('As 70 submissões recebidas não coincidem com a base auditada de 16/11/2026. Os indicadores reconciliados não serão apresentados até rever os registos em Qualidade dos dados.')
+            st.stop()
     reconciled=reconcile(pre_cur,pos_cur,decisions)
     reconciled['curadoria']=curadoria_audit
     report=build_analysis(reconciled['pre'],reconciled['pos'])
@@ -662,6 +716,7 @@ def main():
     if not paired_questions.empty:paired_questions=paired_questions[paired_questions['participante_id'].isin(ids)]
     with st.sidebar:
         st.divider()
+        st.caption('Reconciliação: ' + ('regras integradas' if curadoria_audit.get('origem_regras')=='integrada' else 'regras verificadas'))
         st.caption(f'Kobo PCH · {updated}')
         st.caption('15 perguntas · Edição '+(edition if edition!='Todas' else 'todas'))
     if page=='Dashboard':
