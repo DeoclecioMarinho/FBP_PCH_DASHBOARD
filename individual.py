@@ -57,6 +57,8 @@ def participant_question_detail(pre_raw, pos_raw, participant_id, question_catal
 def compact_status(raw):
     states = {
         'Pré e pós concluídos': 'Concluído',
+        'Pré e pós recuperados': 'Pós recuperado',
+        'Pré e pós recuperados (provisório)': 'Pós provisório',
         'Pós-teste pendente': 'Pós pendente',
         'Pós-teste incompleto': 'Pós incompleto',
         'Pré-teste incompleto': 'Pré incompleto',

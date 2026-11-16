@@ -1,86 +1,55 @@
-# Dashboard de Formação FBP — Projeto de Capital Humano · v5
+# Dashboard PCH–FBP | Versão 7 (auditoria de 16/11/2026)
 
-**Aplicação Streamlit para acompanhamento dos 15 itens do pré e pós-teste FBP.**
+Painel Streamlit para acompanhamento de avaliações pré/pós-teste, ligado em tempo real ao servidor Kobo PCH. A versão 7 inclui **curadoria específica de registos** com validação por identificador, UUID e assinatura das 15 respostas.
 
-## Estrutura e decisões de desenho
+## Instalação / atualização
 
-Três páginas principais, com menu lateral compacto:
+1. Fazer cópia de segurança do repositório atual.
+2. Substituir os ficheiros da aplicação pelos ficheiros desta pasta, incluindo `curadoria.py` e `data/curadoria_2026-11-16.json`.
+3. **Não colocar as duas bases XLSX nem o relatório nominal num repositório público.** Esses ficheiros são apenas materiais privados de auditoria.
+4. Configurar `KOBO_BASE_URL`, `KOBO_PRE_UID`, `KOBO_POS_UID` e `KOBO_TOKEN` nas **Secrets do Streamlit** (não no código).
+5. Configurar `DASHBOARD_PASSWORD` nas Secrets para aceder às tabelas nominais e decisões de qualidade. Deixar `ENABLE_KOBO_DELETE=false`, salvo decisão expressa do administrador.
+6. Publicar e conferir os 33 participantes, os 30 pares com os dois recuperados incluídos e os 3 pendentes, **desde que o Kobo continue com as mesmas submissões das extrações de 16/11/2026**.
 
-1. **Dashboard** — total de participantes com pré-teste completo, pós-testes associados, média inicial, evolução dos pares válidos, cinco perguntas mais difíceis e uma tabela destacada de resultados por participante (10 por página, com pesquisa).
-2. **Aprendizagem** — resultados por competência, por pergunta, análise pré/pós exclusivamente para os mesmos participantes, evolução por instituição e exportação, além de uma ficha individual com respostas às 15 perguntas.
-3. **Qualidade dos dados** — duplicados reais (mesmo ID), duplicados potenciais (mesmo nome e instituição com IDs diferentes), submissões incompletas, notas divergentes, respostas sem correspondência e gestão cuidadosa de duplicados.
-
-**Não existe meta fixa de 40 participantes.** O sistema conta apenas os participantes registados; o número de 40 referido inicialmente era indicativo e não é tratado como valor de referência. «Ainda sem pós-teste» = pessoas com pré-teste completo, mas sem pós-teste válido associado. **Não corresponde a ausências antes do pré-teste**, que não podemos identificar sem uma lista de presenças.
-
-**Tabelas:** HTML responsivo, com quebra automática de texto e paginação (10 participantes por página, 8 questões por página na ficha individual). Sem barras de scroll internas. O documento poderá ter scroll de página normal.
-
-## Novidades v5
-
-- **Dashboard → Resultados por participante:** nome completo, instituição, nota do pré e pós-teste em acertos `/15`, ganho em pontos percentuais e estado, com pesquisa por nome/instituição/função e exportação CSV. Não é um relatório apenas agregado.
-- **Aprendizagem → Ficha individual:** seleção pelo nome e instituição, resultados pré/pós, diferença e tabela de P01–P15 com opção assinalada (A/B/C/D), indicação de certo/errado, melhoria/regressão e enunciado completo numa caixa abaixo. Funciona também enquanto o pós-teste ainda não foi realizado.
-- **Dashboard → Conteúdos que precisam de reforço:** os códigos das barras continuam a ser **P01, P02, …, P15**. O enunciado integral e a percentagem aparecem ao passar o rato sobre a barra, com quebras de linha automáticas.
-- Os resultados individuais estão protegidos por `DASHBOARD_PASSWORD`, enquanto os agregados continuam disponíveis sem essa configuração. Se não colocares essa palavra-passe, a tabela nominal não é mostrada; isto é intencional para não expor as notas individuais publicamente.
-- Nenhum dos XLSForms, identificadores Kobo, método de escolha de submissão ou regras de eliminação foi alterado nesta versão.
-
-
-## Instalação na aplicação Streamlit existente
-
-1. Descompactar o ZIP e copiar **todos** os ficheiros `.py`, `questionario.json`, `requirements.txt`, a pasta `assets/` e a pasta `.streamlit/` para a raiz do repositório GitHub usado pelo dashboard atual. Substituir os ficheiros da versão anterior. `tests/` pode também ser copiada.
-2. Confirmar o ficheiro de entrada **`app.py`** nas configurações da aplicação Streamlit Cloud.
-3. Em **Manage app → Settings → Secrets**, adicionar as variáveis do ficheiro `SECRETS_EXEMPLO.toml`, substituindo apenas os campos de credenciais. **Não guardar o token nem as passwords no GitHub.**
-4. Fazer *Commit changes*. O Streamlit atualiza a aplicação. Se necessário, clicar em *Reboot app*.
-5. Na barra lateral, usar **Atualizar Kobo** para forçar nova leitura. Os dados são consultados automaticamente a cada 120 segundos.
-
-### Exemplo de Secrets
+Exemplo **sem token** de Secrets:
 
 ```toml
 KOBO_BASE_URL = "https://kf.kobo.ucp-pch.org"
 KOBO_PRE_UID = "a9UStPiv4QDyzfZeHiBzwu"
 KOBO_POS_UID = "a2JXAwUZP7h3z3nUmpfchj"
-KOBO_TOKEN = "INSERIR_NOVO_TOKEN"
-DASHBOARD_PASSWORD = "CRIAR_PASSWORD_FORTE"
+KOBO_TOKEN = "INSERIR_TOKEN_NAS_SECRETS"
+DASHBOARD_PASSWORD = "DEFINIR_UMA_PALAVRA_PASSE_FORTE"
 ENABLE_KOBO_DELETE = false
-ADMIN_DELETE_PASSWORD = "CRIAR_SEGUNDA_PASSWORD_FORTE"
 ```
 
-- **KOBO_TOKEN** autentica os pedidos à API. Trocar o token divulgado anteriormente.
-- **DASHBOARD_PASSWORD** protege nomes e resultados; se ausente, apenas indicadores agregados são apresentados.
-- **ENABLE_KOBO_DELETE** ativa a gestão definitiva de exclusões. **Por defeito = false**.
-- **ADMIN_DELETE_PASSWORD** deve ser **diferente** da password do dashboard e é exigida para cada eliminação.
+## O que foi corrigido na base de 16/11/2026
 
-## Tratamento de duplicados
+- **41 pré-testes / 29 pós-testes** brutos, incluindo um provável teste técnico.
+- **8 pré-testes** não contabilizados como pré independentes (inclui registo de teste, inscrições repetidas e duas avaliações utilizadas como pós provisórios).
+- **1 pós-teste** retirado provisoriamente dos resultados por ter características de teste técnico.
+- **2 pós-testes verdadeiros** reassociados ao primeiro pré correto; nenhum foi descartado.
+- **2 segundos pré-testes** contabilizados como pós **provisórios**.
+- Resultado: **33 participantes**, **30 pares comparáveis**, **3 casos sem pós**. A identidade de um registo com nome semelhante ainda exige confirmação.
 
-O sistema não elimina automaticamente qualquer submissão.
+Na barra lateral existe um interruptor **Incluir 2 pós provisórios**. Desativando-o, permanecem 33 participantes e 28 pares exclusivamente provenientes do pós-teste oficial. Os números mudam automaticamente caso cheguem novas submissões.
 
-- **IDs iguais (mesma fase):** escolhe um registo canónico, dando prioridade ao primeiro registo com 15 respostas completas; os outros tornam-se candidatos à eliminação após verificação.
-- **Nomes e instituição iguais com IDs diferentes na mesma edição:** são **possíveis** duplicados, não uma prova. Dois trabalhadores podem ter o mesmo nome. A revisão deve confirmar identidade e contactos antes da exclusão. Não se apaga um pré-teste se houver pós-teste associado ao ID a eliminar.
-- Não se elimina a última submissão de um identificador.
-- Antes de ativar a eliminação, confirmar que o **token Kobo tem permissão para apagar submissões**. Uma conta com apenas leitura poderá ver candidatos, mas o Kobo recusará os pedidos DELETE.
-- Cada exclusão: selecionar **grupo** → escolher **submissão por Kobo ID** → descarregar **cópia de segurança JSON** → confirmar password de administração → escrever `ELIMINAR <ID>` → assinalar confirmação → executar. Antes de apagar, a aplicação consulta a API de novo e verifica se a remoção continua segura. Apenas um registo é eliminado por operação.
-- Uma remoção por API é **definitiva**. A cópia de segurança deve ser arquivada fora do Streamlit. O dashboard não constitui um arquivo de auditoria permanente. Para uma trilha auditável, guardar o backup e a autorização institucional.
+## Segurança e transparência
 
-**Cuidado:** o pós-teste utiliza uma ligação nativa ao pré-teste. Eliminações no formulário original podem impactar ligações e submissões relacionadas. Faça o primeiro teste com registos fictícios.
+A curadoria **não apaga nem edita submissões no Kobo**. Atua na camada de análise do Streamlit, e só sobre os IDs específicos auditados. Cada regra verifica simultaneamente o ID da submissão, o UUID do participante, a nota e a assinatura das respostas. Se os dados não corresponderem, a ação é bloqueada e surge um aviso em Qualidade dos dados.
 
-Endpoint oficial de remoção: `DELETE /api/v2/assets/{asset_uid}/data/{submission_id}/`. Fonte: [KoboToolbox API v2](https://eu.kobotoolbox.org/api/v2/docs/).
+Os valores de classificação são recalculados a partir das 15 respostas. Uma avaliação recuperada do segundo pré é sempre identificada como **provisória** e não é apresentada como pós-teste originalmente submetido no formulário final.
 
-## Definição dos indicadores
+## Páginas
 
-- **Participantes com pré-teste:** um registo completo por `participante_id` válido; outras submissões com o mesmo ID são sinalizadas separadamente.
-- **Pós-testes associados:** ID igual, identidade confirmada e 15 respostas válidas. Registos incompletos ou não confirmados não entram nas médias emparelhadas.
-- **Média inicial:** média das percentagens de acertos de todos os participantes com pré-teste completo selecionados nos filtros.
-- **Ganho médio:** média da diferença `Pós (%) - Pré (%)`, dos mesmos participantes, em pontos percentuais.
-- **Dificuldades:** taxa de acerto de cada uma das 15 questões no pré-teste; perguntas com menos de 50% são assinaladas como pontos a reforçar após volume suficiente de respostas.
-- **Instituições:** comparação das médias pré/pós dos **mesmos participantes** de cada instituição; evita comparação de amostras diferentes.
-- **Questionário:** a grelha de 15 respostas foi preservada conforme o documento original. A questão 2 precisa de validação pedagógica, por poder ter alternativas ambíguas.
+- **Dashboard:** participantes, cobertura, médias, evolução, perguntas com menor taxa de acerto, resultados individuais.
+- **Aprendizagem:** comparação por pergunta, competência e instituição; ficha individual com respostas pré/pós.
+- **Qualidade dos dados:** histórico de decisões, duplicados, verificações e exportações. Eliminação física, se alguma vez for ativada, exige autorização e revalidação independente.
 
-## Testes
+## Limitações a confirmar
 
-```bash
-pip install -r requirements.txt
-python -m unittest discover -s tests -v
-streamlit run app.py
-```
+- Rever o tratamento do terceiro pré-teste num grupo com três tentativas.
+- Confirmar se dois nomes parcialmente coincidentes correspondem à mesma pessoa (funções declaradas diferentes); por segurança continuam separados.
+- Confirmar a exclusão do registo técnico da equipa.
+- Confirmar com o formador a interpretação da resposta oficial da questão **P02**, cuja formulação admite leitura próxima de mais de uma opção.
 
-Os testes cobrem cálculos, associação pré/pós, recuperação das 15 respostas individuais, correspondência com o cálculo agregado, hover dos gráficos mantendo os códigos P01–P15, consulta de API, proteção do registo canónico, duplicados, autorização de eliminação e backup JSON.
-
-**Estado:** código compilado e **23 testes automatizados passaram** (`python -m unittest discover -s tests -v`). Esta sessão não teve acesso HTTP ao servidor Kobo e a biblioteca Streamlit não se encontra instalada neste ambiente. **A interface real e a função DELETE precisam ainda de validação na aplicação publicada e numa conta autorizada.**
+O relatório individual detalhado é entregue separadamente no ficheiro `FBP_PCH_Auditoria_Resultados_16Nov2026.xlsx` e **não está incluído neste ZIP de aplicação**.

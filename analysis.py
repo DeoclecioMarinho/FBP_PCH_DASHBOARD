@@ -117,8 +117,11 @@ def build_analysis(pre_raw: list[dict], pos_raw: list[dict]):
         pos = valid_posts[0] if valid_posts else (all_posts[0] if all_posts else None)
         pos_score = score_record(pos) if pos else None
         paired = bool(pos and pos in valid_posts and pre_score["completo"])
+        source_fbp = field(pos, "_fbp_source") if pos else ""
+        recuperado = bool(paired and source_fbp in ("segundo_pre_aprovado", "segundo_pre_provisorio"))
+        provis = bool(paired and source_fbp == "segundo_pre_provisorio")
         if paired:
-            state = "Pré e pós concluídos"
+            state = "Pré e pós recuperados (provisório)" if provis else ("Pré e pós recuperados" if recuperado else "Pré e pós concluídos")
         elif pos and pos_score and not pos_score["completo"]:
             state = "Pós-teste incompleto"
         elif pos and str(field(pos, "confirma_identidade") or "").lower() != "sim":
@@ -132,6 +135,7 @@ def build_analysis(pre_raw: list[dict], pos_raw: list[dict]):
         edition = str(field(pre, "edicao_id") or "Sem edição").strip()
         row = {
             "participante_id": pid, "Nome": name, "Instituição": institution,
+            "Origem pós": ("2.º pré provisório" if provis else "2.º pré validado" if recuperado else "Pós Kobo reassociado" if source_fbp == "pos_kobo_reassociado" else "Pós-teste Kobo" if paired else "—"),
             "Função": str(field(pre, "funcao") or ""), "Edição": edition,
             "Estado": state, "Data pré": timestamp(pre), "Data pós": timestamp(pos) if pos else "",
             "Acertos pré": pre_score["acertos"] if pre_score["completo"] else None,
@@ -189,7 +193,7 @@ def institution_summary(df):
         return pd.DataFrame(columns=columns)
     out = []
     for inst, g in df.groupby("Instituição", dropna=False):
-        paired = g[g["Estado"] == "Pré e pós concluídos"]
+        paired = g[g["Estado"].isin(["Pré e pós concluídos", "Pré e pós recuperados", "Pré e pós recuperados (provisório)"])]
         before = paired["Pré (%)"].mean() if not paired.empty else float("nan")
         after = paired["Pós (%)"].mean() if not paired.empty else float("nan")
         out.append({"Instituição": inst, "Pré-testes": len(g), "Pós-testes": len(paired),

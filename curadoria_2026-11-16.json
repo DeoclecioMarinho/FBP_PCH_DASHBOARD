@@ -1,0 +1,182 @@
+{
+  "versao": "2026-11-16",
+  "fonte": "Auditoria local dos dois exportes Kobo de 16/11/2026",
+  "modo": "provisorio_auditavel",
+  "pre_excluir": [
+    {
+      "id": 3,
+      "participante_id": "07b64cba-f0aa-4b2b-9065-aac7aba47627",
+      "nota": 5,
+      "assinatura": "9ae4fe9e5078ed90446f82c4ebd9783e5a8fb20b390d882c32202ad22e03c1d9"
+    },
+    {
+      "id": 34,
+      "participante_id": "5c921e14-9a7d-4dac-97cf-5a8beb5e1ddc",
+      "nota": 4,
+      "assinatura": "2dea437e68587983467957a03bf139378b7b080a2525bb6d5d5342a3384bfc1c"
+    },
+    {
+      "id": 40,
+      "participante_id": "8f65c192-907d-4a41-b060-7c27bd5b686f",
+      "nota": 13,
+      "assinatura": "88f006bdd01c679836d912ad3631c60b94e98ba37fb040f52fc91ec890d06d88"
+    },
+    {
+      "id": 41,
+      "participante_id": "26430c52-7df4-41c0-b5b0-e94142331d5e",
+      "nota": 15,
+      "assinatura": "c069a0e1de6ef5c5e34f92871a40da1a6b861da6f4ff6bf30f049f5864bac1df"
+    },
+    {
+      "id": 42,
+      "participante_id": "54bd8f55-992d-4f10-998c-e2a245d79b29",
+      "nota": 11,
+      "assinatura": "c24686bd45ebc634a9a7fc5a8582ece083c4702f5855554188cb9d6bd1de9756"
+    },
+    {
+      "id": 59,
+      "participante_id": "a8d851ae-c578-4935-82e9-2e58eada9089",
+      "nota": 14,
+      "assinatura": "f675079252cbd331690add42c7202ec30653aca83816891d3d38b973755127e0"
+    },
+    {
+      "id": 76,
+      "participante_id": "c5709259-fbe9-4a04-9198-6cfd44712a74",
+      "nota": 11,
+      "assinatura": "88dd0259748dd9b5a903c5d0134ce6d995d773f7111b5af3fb74d36a20da0914"
+    },
+    {
+      "id": 78,
+      "participante_id": "a96926b8-84e2-4d47-acad-1da90b9a5cc0",
+      "nota": 14,
+      "assinatura": "6d711dfdebcc65e0db424405e18576ab39f2b15588691152505d73016a0bacfa"
+    }
+  ],
+  "pos_excluir": [
+    {
+      "id": 4,
+      "participante_id": "07b64cba-f0aa-4b2b-9065-aac7aba47627",
+      "nota": 5,
+      "assinatura": "8d087f95ae22dad7115c966527f3694ae90f7552ac27cc452344459850884561"
+    }
+  ],
+  "remapear_pos": [
+    {
+      "pre_referencia": {
+        "id": 59,
+        "participante_id": "a8d851ae-c578-4935-82e9-2e58eada9089",
+        "nota": 14,
+        "assinatura": "f675079252cbd331690add42c7202ec30653aca83816891d3d38b973755127e0"
+      },
+      "pre_principal": {
+        "id": 11,
+        "participante_id": "95661352-4ab2-47e9-bddc-d6e9f8544275",
+        "nota": 14,
+        "assinatura": "dd708c4644a4b282632d2b6b4318351765c6c1f3adeefe96d5475e77851094d5"
+      },
+      "pos_referencia": {
+        "id": 70,
+        "participante_id": "a8d851ae-c578-4935-82e9-2e58eada9089",
+        "nota": 14,
+        "assinatura": "f675079252cbd331690add42c7202ec30653aca83816891d3d38b973755127e0"
+      },
+      "motivo": "Pós verdadeiro ligado a reentrada do pré; cruzamento recuperado com o pré inicial."
+    },
+    {
+      "pre_referencia": {
+        "id": 34,
+        "participante_id": "5c921e14-9a7d-4dac-97cf-5a8beb5e1ddc",
+        "nota": 4,
+        "assinatura": "2dea437e68587983467957a03bf139378b7b080a2525bb6d5d5342a3384bfc1c"
+      },
+      "pre_principal": {
+        "id": 32,
+        "participante_id": "984dcd4c-4404-4bc8-89e8-9984ab8c1f81",
+        "nota": 7,
+        "assinatura": "128107edc619442860a4daa205823153c209a460525adafdaceadc8c85ec3061"
+      },
+      "pos_referencia": {
+        "id": 49,
+        "participante_id": "5c921e14-9a7d-4dac-97cf-5a8beb5e1ddc",
+        "nota": 11,
+        "assinatura": "1ef9b4ddbeb4e0afed5e766cd225726ec8d070cfcf9542e69d28bde61392d308"
+      },
+      "motivo": "Pós verdadeiro ligado a reentrada do pré; cruzamento recuperado com o pré inicial."
+    }
+  ],
+  "recuperar_pos": [
+    {
+      "pre_principal": {
+        "id": 5,
+        "participante_id": "892a964a-baa4-4f45-9f59-cd39410a7403",
+        "nota": 13,
+        "assinatura": "59c6bc792dbde00496957d42615fd6f8f4479677ee9a57d413f7de6d10f519de"
+      },
+      "pre_segundo": {
+        "id": 40,
+        "participante_id": "8f65c192-907d-4a41-b060-7c27bd5b686f",
+        "nota": 13,
+        "assinatura": "88f006bdd01c679836d912ad3631c60b94e98ba37fb040f52fc91ec890d06d88"
+      },
+      "motivo": "Segundo pré posterior ao primeiro e sem pós Kobo confirmado; classificação provisória.",
+      "estado": "provisorio"
+    },
+    {
+      "pre_principal": {
+        "id": 14,
+        "participante_id": "1b1aaab9-cd59-453f-8cfd-19d73a913e21",
+        "nota": 9,
+        "assinatura": "eaa126c54d336193a38bb2b9d743127d48e61533129e59c2fc3fea0960a3c8ae"
+      },
+      "pre_segundo": {
+        "id": 76,
+        "participante_id": "c5709259-fbe9-4a04-9198-6cfd44712a74",
+        "nota": 11,
+        "assinatura": "88dd0259748dd9b5a903c5d0134ce6d995d773f7111b5af3fb74d36a20da0914"
+      },
+      "motivo": "Segundo pré posterior ao primeiro e sem pós Kobo confirmado; classificação provisória.",
+      "estado": "provisorio"
+    }
+  ],
+  "exclusao_teste": [
+    3
+  ],
+  "alertas": [
+    {
+      "ids_pre": [
+        32,
+        33,
+        34
+      ],
+      "codigo": "bico_homonimo",
+      "motivo": "Rever identidade, cronologia e submissões adicionais antes de finalizar os indicadores."
+    },
+    {
+      "ids_pre": [
+        5,
+        40,
+        78
+      ],
+      "codigo": "carlos_terceira",
+      "motivo": "Rever identidade, cronologia e submissões adicionais antes de finalizar os indicadores."
+    },
+    {
+      "ids_pre": [
+        14,
+        76
+      ],
+      "codigo": "idrissa_reclassificacao",
+      "motivo": "Rever identidade, cronologia e submissões adicionais antes de finalizar os indicadores."
+    },
+    {
+      "ids_pre": [
+        3
+      ],
+      "ids_pos": [
+        4
+      ],
+      "codigo": "registo_teste",
+      "motivo": "Rever identidade, cronologia e submissões adicionais antes de finalizar os indicadores."
+    }
+  ]
+}

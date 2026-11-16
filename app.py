@@ -19,8 +19,10 @@ import streamlit as st
 from analysis import build_analysis, question_summary, institution_summary, field, score_record
 from monitor import pre_per_question, topic_performance, suspected_duplicate_names
 from quality import audit_records, can_delete_now, backup_json
+from reconciliacao import reconcile, read_decisions, decisions_csv
 from individual import participant_question_detail, compact_status, short_institution
 from charts import bar_figure
+from curadoria import apply_curadoria
 from kobo_client import (DEFAULT_BASE_URL, PRE_UID, POS_UID,
                          KoboAPIError, fetch_submissions, delete_submission)
 
@@ -243,6 +245,8 @@ def individual_panel(df, pre_raw, pos_raw, access):
                         key='individual_choice')
     data=mapping[chosen]
     st.caption(f"{data['Nome']} · {data['Instituição']} · {data['Função']} · edição {data['Edição']}")
+    if str(data.get('Origem pós') or '').startswith('2.º pré'):
+        st.warning('Esta avaliação final foi recuperada de uma submissão ao formulário de pré-teste. O resultado é provisório até confirmação da equipa; a origem é conservada.')
     first,second,third=st.columns(3)
     with first:
         st.metric('Pré-teste', '—' if pd.isna(data['Acertos pré']) else f"{int(data['Acertos pré'])}/15")
@@ -273,12 +277,13 @@ def view_dashboard(df, pre_raw, raw_pre_count, raw_pos_count, qpre, access):
     st.title('Dashboard')
     st.markdown('<div class="hero-sub">Visão operacional da formação · dados atualizados a partir do Kobo</div>',unsafe_allow_html=True)
     valid=df[df['Pré (%)'].notna()] if not df.empty else df
-    paired=df[df['Estado']=='Pré e pós concluídos'] if not df.empty else df
+    paired=df[df['Pós (%)'].notna()] if not df.empty else df
     npre=len(valid);npost=len(paired);pending=npre-npost
+    recuperados=int(paired['Origem pós'].fillna('').str.startswith('2.º pré').sum()) if npost else 0
     pre_mean=valid['Pré (%)'].mean() if npre else None
     gain=paired['Evolução (pp)'].mean() if npost else None
     cards([('Participantes com pré-teste',npre,'Registos únicos e completos'),
-           ('Pós-testes associados',npost,f'{pending} ainda sem pós-teste válido'),
+           ('Pós-testes associados',npost,f'{pending} pendentes · {recuperados} recuperado(s) e validados'),
            ('Média do pré-teste',pct(pre_mean),'Conhecimentos iniciais'),
            ('Evolução média',diff(gain) if npost else '—','Apenas participantes com ambos os testes')])
     left,right=st.columns([1.18,.9],gap='large')
@@ -323,7 +328,7 @@ def view_aprendizagem(df,qpre,paired_questions,access,pre_raw,pos_raw):
     st.title('Aprendizagem')
     st.markdown('<div class="hero-sub">Diagnóstico inicial, evolução das competências e resultados por instituição</div>',unsafe_allow_html=True)
     valid=df[df['Pré (%)'].notna()] if not df.empty else df
-    paired=df[df['Estado']=='Pré e pós concluídos'] if not df.empty else df
+    paired=df[df['Pós (%)'].notna()] if not df.empty else df
     npre=len(valid);npair=len(paired)
     cards([('Pré-testes válidos',npre,'Base do diagnóstico inicial'),
            ('Média inicial',pct(valid['Pré (%)'].mean()) if npre else '—','Todos os pré-testes válidos'),
@@ -377,12 +382,52 @@ def view_aprendizagem(df,qpre,paired_questions,access,pre_raw,pos_raw):
     individual_panel(df,pre_raw,pos_raw,access)
 
 
-def view_qualidade(df,report,pre_raw,pos_raw,access,base,pre_uid,pos_uid,token):
+def view_qualidade(df,report,pre_raw,pos_raw,access,base,pre_uid,pos_uid,token,reconciled,decisions,curadoria_audit=None):
     st.title('Qualidade dos dados')
     st.markdown('<div class="hero-sub">Deteção de duplicados, inconsistências e resolução segura de registos</div>',unsafe_allow_html=True)
     if st.session_state.get('last_delete'):
         st.success(st.session_state.pop('last_delete'))
-    audit=audit_records(pre_raw,pos_raw)
+    if not access:
+        st.info('As informações nominais e as decisões de reconciliação exigem DASHBOARD_PASSWORD nas Secrets do Streamlit.')
+        excluded=(curadoria_audit or {}).get('excluidos_pre',0)
+        c1,c2,c3=st.columns(3)
+        c1.metric('Pré-testes excluídos dos indicadores',excluded)
+        c2.metric('Pós oficiais reassociados',(curadoria_audit or {}).get('alias_pos',0))
+        c3.metric('Pós recuperados provisórios',len((curadoria_audit or {}).get('provisorios',[])))
+        st.caption('Nenhum registo foi apagado do Kobo. Ative a palavra-passe para consultar a auditoria individual.')
+        return
+    if curadoria_audit:
+        heading('Reconciliação da base de 16/11/2026','Regras verificadas nas submissões Kobo; os originais permanecem intactos')
+        ac,bc,cc=st.columns(3)
+        ac.metric('Pré-testes não contabilizados',curadoria_audit.get('excluidos_pre',0))
+        bc.metric('Pós oficiais reassociados',curadoria_audit.get('alias_pos',0))
+        cc.metric('Pós recuperados (provisórios)',len(curadoria_audit.get('provisorios',[])))
+        st.caption('Entre as exclusões existe um registo técnico de teste. Estes ajustes não apagam nenhum registo no Kobo.')
+        pre_idx={int(field(r,'_id')):r for r in pre_raw if str(field(r,'_id') or '').isdigit()}
+        def nome_individual(submission_id):
+            return str(field(pre_idx.get(submission_id,{}),'nome_completo') or f'Pré #{submission_id}').strip()
+        actions={int(x['id']) for x in curadoria_audit.get('aplicadas',[]) if x.get('id') is not None}
+        notes=[]
+        if 40 in actions:
+            notes.append((nome_individual(5),'Pré #5, segundo pré #40 usado como pós provisório; terceira tentativa #78 fora das médias.'))
+        if 76 in actions:
+            notes.append((nome_individual(14),'Pré #14, segundo pré #76 usado como pós provisório.'))
+        if 70 in actions:
+            notes.append((nome_individual(11),'Pré original #11 e pós Kobo #70, que tinha sido associado ao pré repetido #59.'))
+        if 49 in actions:
+            notes.append((nome_individual(34),'Pré inicial #32 e pós Kobo #49 (associado no formulário ao pré #34). Rever grafia e identidade.'))
+        if 33 in pre_idx:
+            notes.append((nome_individual(33),'Pré #33 mantido separado; função declarada diferente. Confirmar que não é a pessoa anterior.'))
+        if 3 in actions:
+            notes.append((nome_individual(3),'Pré #3 e pós #4 classificados como registos técnicos de teste e excluídos.'))
+        if notes:
+            table=pd.DataFrame(notes,columns=['Caso','Decisão / Observação'])
+            clean_table(table,[('Caso','Caso'),('Decisão / Observação','Decisão / Observação')],
+                        key='curated_decisions',size=6,widths=[30,70])
+        if curadoria_audit.get('avisos'):
+            st.warning('Mudanças nos registos históricos: '+ '; '.join(curadoria_audit['avisos'][:5]))
+        st.caption('Os casos com três submissões e possíveis homónimos exigem confirmação humana. As recuperações apresentadas são provisórias.')
+    audit=audit_records(pre_raw,pos_raw,decisions)
     ids=set(df['participante_id']) if not df.empty else set()
     group_view=[g for g in audit['groups'] if any(x['pid'] in ids for x in g['rows'])] if ids else audit['groups']
     anomalies=report['anomalies']
@@ -391,18 +436,20 @@ def view_qualidade(df,report,pre_raw,pos_raw,access,base,pre_uid,pos_uid,token):
     score_diffs=0 if df.empty else int(df['Inconsistência nota pré'].sum()+df['Inconsistência nota pós'].sum())
     incomplete=0 if df.empty else int(df['Respostas pré'].lt(15).sum())
     orphan=report['orphan_post_count']
-    cards([('Grupos de duplicados',len(group_view),'Requerem verificação individual'),
+    cards([('Repetições excluídas',len(reconciled['duplicate_obvious'])+(curadoria_audit or {}).get('excluidos_pre',0),'Excluídas dos indicadores, preservadas no Kobo'),
            ('Notas divergentes',score_diffs,'Cálculo Kobo × dashboard'),
            ('Pré-testes incompletos',incomplete,'Respostas em falta'),
            ('Pós-testes sem pré',orphan,'Identificadores não associados')])
     if not access:
         st.info('Para ver nomes, grupos de duplicados, auditorias e opções de eliminação, configura DASHBOARD_PASSWORD nas Secrets.')
         return
+    if reconciled.get('candidates') or decisions:
+        reconciliation_ui(reconciled,decisions)
     heading('Duplicados detetados','Nenhum registo é apagado automaticamente')
     if not group_view:
         st.success('Não foram encontrados duplicados por identificador ou por nome/instituição.')
     else:
-        st.markdown('<div class="notice">Os registos com o mesmo ID são repetidos. Nomes iguais com IDs diferentes são '
+        st.markdown('<div class="notice">Várias submissões do mesmo ID não são automaticamente descartáveis: podem conter uma segunda avaliação. Nomes iguais com IDs diferentes são '
                     '<b>apenas suspeitas</b>: podem representar pessoas diferentes.</div>',unsafe_allow_html=True)
         slim=[]
         for g in group_view:
@@ -460,7 +507,7 @@ def view_qualidade(df,report,pre_raw,pos_raw,access,base,pre_uid,pos_uid,token):
                 # Nova leitura SEM CACHE antes de um pedido irreversível.
                 fresh_pre=fetch_submissions(base,pre_uid,token)
                 fresh_pos=fetch_submissions(base,pos_uid,token)
-                fresh=can_delete_now(item['phase'],item['id'],fresh_pre,fresh_pos)
+                fresh=can_delete_now(item['phase'],item['id'],fresh_pre,fresh_pos,decisions)
                 if not fresh or fresh['pid']!=item['pid']:
                     st.error('A situação do registo mudou ou deixou de ser seguro eliminá-lo. Atualiza o painel.');return
                 uid=pre_uid if item['phase']=='pre' else pos_uid
@@ -468,6 +515,111 @@ def view_qualidade(df,report,pre_raw,pos_raw,access,base,pre_uid,pos_uid,token):
                 st.session_state['last_delete']=f"Submissão {item['id']} eliminada no Kobo. Guarda a cópia de segurança."
                 fetch_both.clear();st.rerun()
             except KoboAPIError as exc: st.error(str(exc))
+
+
+
+
+def current_decisions():
+    """Configuração auditável versionada no GitHub + aprovações desta sessão."""
+    config=ROOT/'data'/'reconciliacoes.csv'
+    saved=read_decisions(config.read_bytes()) if config.exists() else []
+    overlay=st.session_state.get('reconcile_decisions',[])
+    # A decisão da sessão prevalece sobre uma decisão anterior para o mesmo par.
+    pairs={}
+    for d in [*saved,*overlay]:
+        try:key=(int(d.get('pre_id_original')),int(d.get('pre_id_segundo')))
+        except (ValueError,TypeError):continue
+        pairs[key]=dict(d)
+    return list(pairs.values())
+
+
+def reconciliation_ui(reconciled,decisions):
+    """Admin confirma reclassificações; alterações só atingem a análise Streamlit."""
+    heading('Reconciliar duas avaliações','O 2.º pré só pode ser pós após confirmação da formação')
+    obvious=reconciled['duplicate_obvious']
+    proposed=reconciled['candidates']
+    approved_keys={(c['pre_id_original'],c['pre_id_segundo']) for c in reconciled['approved']}
+    a,b,c=st.columns(3)
+    a.metric('Repetições técnicas',len(obvious))
+    b.metric('Segundos pré a verificar',len(proposed)-len(reconciled['approved']))
+    c.metric('Pós recuperados validados',len(reconciled['approved']))
+    st.caption('As repetições técnicas foram excluídas das estatísticas, sem serem apagadas no Kobo. '
+               'A passagem do 2.º pré para pós requer aprovação e preserva o registo de origem.')
+    if obvious:
+        with st.expander(f'Ver {len(obvious)} repetições técnicas excluídas'):
+            items=pd.DataFrame([{'Participante':r['nome'],'Instituição':short_institution(r['instituicao']),
+                                 'ID mantido':r['id_conservar'],'ID excluído':r['id_repetido']} for r in obvious])
+            clean_table(items,[('Participante','Participante'),('Instituição','Instituição'),
+                        ('Manter','ID mantido'),('Excluído','ID excluído')],key='obvious_dup',size=7,widths=[45,27,14,14])
+            st.download_button('Exportar auditoria das repetições',csv(pd.DataFrame(obvious)),
+                               'fbp_repeticoes_tecnicas.csv',mime='text/csv')
+    if proposed:
+        view=[]
+        for c in proposed:
+            pair=(c['pre_id_original'],c['pre_id_segundo'])
+            view.append({'Participante':c['nome'],'Instituição':short_institution(c['instituicao']),
+                         'Pré 1':f"{c['acertos_primeiro']}/15",'Pré 2':f"{c['acertos_segundo']}/15",
+                         'Intervalo':f"{c['intervalo_min']:.0f} min",
+                         'Estado':'Validado' if pair in approved_keys else 'Por confirmar'})
+        clean_table(pd.DataFrame(view),[('Participante','Participante'),('Instituição','Instituição'),
+                        ('1.ª nota','Pré 1'),('2.ª nota','Pré 2'),('Tempo','Intervalo'),('Situação','Estado')],
+                    key='pre_as_post_proposals',size=8,widths=[29,17,11,11,13,19])
+        proposed_df=pd.DataFrame(proposed)
+        st.download_button('Descarregar candidatos para análise',csv(proposed_df),
+                           'FBP_candidatos_segundo_pre.csv',mime='text/csv',key='review_export')
+        candidates={f"{c['pre_id_original']}:{c['pre_id_segundo']}":c for c in proposed}
+        choice=st.selectbox('Selecionar caso para revisão',list(candidates),
+            format_func=lambda k:f"{candidates[k]['nome']} · {candidates[k]['acertos_primeiro']}/15 → {candidates[k]['acertos_segundo']}/15",
+            key='convert_select')
+        rec=candidates[choice]
+        st.caption(f"1.º pré: {rec['data_primeiro']} (Kobo #{rec['pre_id_original']}) · "
+                   f"2.º pré: {rec['data_segundo']} (Kobo #{rec['pre_id_segundo']}) · "
+                   f"{rec['q_diferentes']} resposta(s) diferentes")
+        pair=(rec['pre_id_original'],rec['pre_id_segundo'])
+        if pair in approved_keys:
+            st.success('O segundo pré-teste está aprovado como pós recuperado para esta pessoa.')
+            if st.button('Revogar esta validação',key='revogar_pareamento'):
+                st.session_state['reconcile_decisions']=[*st.session_state.get('reconcile_decisions',[]),
+                    {'pre_id_original':rec['pre_id_original'],'pre_id_segundo':rec['pre_id_segundo'],
+                     'decisao':'nao_usar','responsavel':'Administrador',
+                     'nota':'Validação revogada','data_decisao':datetime.now(timezone.utc).isoformat()}]
+                st.rerun()
+        else:
+            with st.form('confirmar_segundo_pre'):
+                nome_resp=st.text_input('Responsável pela validação',placeholder='Nome da pessoa que conferiu')
+                nota=st.text_input('Fundamento da validação',placeholder='Ex.: participante fez o 2.º teste após a sessão formativa')
+                okay=st.checkbox('Confirmei a identidade e que a segunda avaliação ocorreu DEPOIS da formação; '
+                                 'autorizo o seu uso como pós recuperado.')
+                submit=st.form_submit_button('Validar 2.º pré como pós',type='primary')
+            if submit:
+                if not nome_resp.strip() or not nota.strip() or not okay:
+                    st.error('Preenche responsável, fundamento e confirmação antes de validar.')
+                else:
+                    st.session_state['reconcile_decisions']=[*st.session_state.get('reconcile_decisions',[]),
+                        {'pre_id_original':rec['pre_id_original'],'pre_id_segundo':rec['pre_id_segundo'],
+                         'decisao':'usar_como_pos','responsavel':nome_resp.strip(),
+                         'nota':nota.strip(),'data_decisao':datetime.now(timezone.utc).isoformat()}]
+                    st.rerun()
+    else:
+        st.info('Não foram detetadas duas submissões completas, cronológicas e elegíveis para reclassificação. '
+                'Casos com datas em falta, três ou mais pré-testes, ou intervalos inferiores a 30 minutos '
+                'exigem investigação fora da associação automática.')
+    if reconciled['blocked']:
+        st.warning(f"{len(reconciled['blocked'])} decisão(ões) guardadas já não são aplicáveis. Reavaliar os registos do Kobo.")
+    if decisions:
+        st.download_button('Guardar decisões para GitHub (CSV)',decisions_csv(decisions),
+                           file_name='reconciliacoes.csv',mime='text/csv',key='export_decisions')
+        st.caption('Para que estas decisões persistam depois de reiniciar o Streamlit, '
+                   'coloca o CSV descarregado em data/reconciliacoes.csv do repositório GitHub.')
+    with st.expander('Importar decisões guardadas',expanded=False):
+        uploaded=st.file_uploader('Ficheiro reconciliacoes.csv',type='csv',key='reconcile_upload')
+        if uploaded is not None and st.button('Aplicar CSV nesta sessão',key='apply_reconcile_csv'):
+            try:
+                loaded=read_decisions(uploaded.getvalue())
+                st.session_state['reconcile_decisions']=loaded
+                st.rerun()
+            except Exception:
+                st.error('Ficheiro de decisões inválido. Use o CSV exportado pelo painel.')
 
 
 def main():
@@ -489,7 +641,15 @@ def main():
             pre_raw,pos_raw,updated=fetch_both(base,pre_uid,pos_uid,hashlib.sha256(token.encode()).hexdigest(),token)
     except KoboAPIError as exc: st.error(str(exc));st.stop()
     except Exception: st.error('Erro inesperado na consulta. Consulte os logs do Streamlit.');st.stop()
-    report=build_analysis(pre_raw,pos_raw)
+    decisions=current_decisions()
+    with st.sidebar:
+        st.markdown('<div class="sidebar-head">AVALIAÇÕES RECUPERADAS</div>',unsafe_allow_html=True)
+        usar_provisorios=st.toggle('Incluir 2 pós provisórios',value=True,
+            help='Desativa para comparar apenas os pós-testes submetidos no formulário oficial.')
+    pre_cur,pos_cur,curadoria_audit=apply_curadoria(pre_raw,pos_raw,usar_provisorios=usar_provisorios)
+    reconciled=reconcile(pre_cur,pos_cur,decisions)
+    reconciled['curadoria']=curadoria_audit
+    report=build_analysis(reconciled['pre'],reconciled['pos'])
     full=report['participants']
     edition,institution=selection_panel(full)
     data=full.copy()
@@ -497,7 +657,7 @@ def main():
         if edition!='Todas':data=data[data['Edição']==edition]
         if institution!='Todas':data=data[data['Instituição']==institution]
     ids=set(data['participante_id']) if not data.empty else set()
-    qpre=pre_per_question(pre_raw,ids,QUESTIONS)
+    qpre=pre_per_question(reconciled['pre'],ids,QUESTIONS)
     paired_questions=report['questions']
     if not paired_questions.empty:paired_questions=paired_questions[paired_questions['participante_id'].isin(ids)]
     with st.sidebar:
@@ -505,12 +665,12 @@ def main():
         st.caption(f'Kobo PCH · {updated}')
         st.caption('15 perguntas · Edição '+(edition if edition!='Todas' else 'todas'))
     if page=='Dashboard':
-        view_dashboard(data,pre_raw,report['raw_pre_count'],report['raw_pos_count'],qpre,access)
+        view_dashboard(data,reconciled['pre'],len(pre_raw),len(pos_raw),qpre,access)
     elif page=='Aprendizagem':
-        view_aprendizagem(data,qpre,paired_questions,access,pre_raw,pos_raw)
+        view_aprendizagem(data,qpre,paired_questions,access,reconciled['pre'],reconciled['pos'])
     else:
-        view_qualidade(data,report,pre_raw,pos_raw,access,base,pre_uid,pos_uid,token)
+        view_qualidade(data,report,pre_raw,pos_raw,access,base,pre_uid,pos_uid,token,reconciled,decisions,curadoria_audit)
     st.markdown('<div class="foot">Projeto de Capital Humano · FBP | Resultados recalculados a partir das respostas Kobo · '+
-                'As notas não são alteradas no servidor.</div>',unsafe_allow_html=True)
+                'Os dados Kobo originais são preservados; as recuperações são provisórias.</div>',unsafe_allow_html=True)
 
 if __name__=='__main__':main()

@@ -3,6 +3,7 @@ from collections import defaultdict
 import json
 from analysis import field, normalize_id, score_record, institution_from, first_selected, sort_key
 from monitor import normalize_person_name
+from reconciliacao import reconcile, kobo_id, date_of, response_signature
 
 
 def rec_id(record):
@@ -19,11 +20,31 @@ def _post_selected(records):
     return confirmed[0] if confirmed else first_selected(recs)
 
 
-def audit_records(raw_pre, raw_pos):
+def audit_records(raw_pre, raw_pos, decisions=None):
     """Devolve grupos de duplicados, mantendo IDs reais de submissão do Kobo.
 
     Grupos de nome são meros indícios; não são fundidos automaticamente.
     """
+    checked = reconcile(raw_pre, raw_pos, decisions)
+    obvious_pre_ids={i['id_repetido'] for i in checked['duplicate_obvious']}
+    protected_ids=checked['protected_ids']
+    obvious_pos_ids=set()
+    from collections import defaultdict as _defaultdict
+    pos_by_pid=_defaultdict(list)
+    for rec in raw_pos:
+        pid=normalize_id(rec)
+        if pid: pos_by_pid[pid].append(rec)
+    for recs in pos_by_pid.values():
+        recs=sorted(recs, key=sort_key)
+        for n,cur in enumerate(recs):
+            t2=date_of(cur)
+            if n==0 or not t2 or not score_record(cur)['completo']:
+                continue
+            for prev in recs[:n]:
+                t1=date_of(prev)
+                if t1 and 0<=(t2-t1).total_seconds()/60<=15 and response_signature(cur)==response_signature(prev):
+                    if kobo_id(cur) is not None: obvious_pos_ids.add(kobo_id(cur))
+                    break
     groups = []
     rows = []
     by_pre_pid = defaultdict(list)
@@ -80,19 +101,24 @@ def audit_records(raw_pre, raw_pos):
                 protected.add(key)
                 continue
             if group['type']=='ID repetido':
-                eligible=True
-                reason='Existe outra submissão do mesmo formulário e identificador para conservar.'
+                eligible=(r['id'] in (obvious_pre_ids if r['phase']=='pre' else obvious_pos_ids) and r['id'] not in protected_ids)
+                reason=('Repetição técnica confirmada (respostas iguais e intervalo curto).' if eligible else
+                        'Respostas diferentes ou intervalo longo: não apagar; poderá ser outra avaliação.')
             else:
                 # Com IDs distintos, se já houver pós ligado, nunca apagar daqui.
                 linked = len(by_pos_pid.get(r['pid'], []))
-                eligible=(linked==0)
-                reason=('Sem pós-teste associado. Confirmar manualmente a identidade.' if eligible
-                        else 'Existe pós-teste associado a este ID: eliminação bloqueada.')
+                eligible=(r['id'] in obvious_pre_ids and linked == 0 and r['id'] not in protected_ids)
+                reason=('Mesmo nome, instituição e 15 respostas num intervalo curto; confirmar a identidade antes de apagar.'
+                        if eligible else 'IDs diferentes: só o nome não comprova duplicação; eliminação bloqueada.')
             previous=candidates.get(key)
             candidates[key]={'phase':r['phase'],'id':r['id'],'pid':r['pid'],
                              'eligible':bool(eligible and (previous is None or previous['eligible'])),
                              'reason':reason, 'time':r['time'], 'score':r['score']['acertos'],
                              'record':r['record']}
+    for key,candidate in candidates.items():
+        if candidate['id'] in protected_ids:
+            candidate['eligible']=False
+            candidate['reason']='Este pré-teste foi validado como pós recuperado; não pode ser apagado.'
     for k in protected:
         if k in candidates:
             candidates[k]['eligible']=False
@@ -108,9 +134,9 @@ def audit_records(raw_pre, raw_pos):
             'n_name_groups':sum(g['type']=='Nome semelhante' for g in groups)}
 
 
-def can_delete_now(phase, submission_id, raw_pre, raw_pos):
+def can_delete_now(phase, submission_id, raw_pre, raw_pos, decisions=None):
     """Revalida cada eliminação sobre dados ACABADOS de consultar no Kobo."""
-    report=audit_records(raw_pre,raw_pos)
+    report=audit_records(raw_pre,raw_pos,decisions)
     candidate=report['candidates'].get((phase,int(submission_id)))
     return candidate if candidate and candidate['eligible'] else None
 

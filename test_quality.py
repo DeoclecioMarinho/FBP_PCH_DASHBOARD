@@ -7,7 +7,7 @@ from quality import audit_records,can_delete_now,backup_json
 class QualityTests(unittest.TestCase):
     def test_same_id_duplicate_keeps_first(self):
         p1=make_record(1,'pre',6)
-        p2=dict(p1); p2['_id']=999;p2['_submission_time']='2026-10-19T20:00:00+00:00'
+        p2=dict(p1); p2['_id']=999;p2['_submission_time']='2026-10-18T10:05:00+00:00'
         report=audit_records([p1,p2],[])
         self.assertEqual(report['n_repeat_groups'],1)
         self.assertFalse(report['candidates'].get(('pre',p1['_id']),{}).get('eligible',False))
@@ -25,7 +25,7 @@ class QualityTests(unittest.TestCase):
         b['nome_completo']=a['nome_completo'];b['instituicao']=a['instituicao'];b['instituicao_label']=a['instituicao_label']
         report=audit_records([a,b],[])
         self.assertEqual(report['n_name_groups'],1)
-        self.assertTrue(report['candidates'][('pre',b['_id'])]['eligible'])
+        self.assertFalse(report['candidates'][('pre',b['_id'])]['eligible'])
         post=make_record(2,'pos',10)
         report2=audit_records([a,b],[post])
         self.assertFalse(report2['candidates'][('pre',b['_id'])]['eligible'])
